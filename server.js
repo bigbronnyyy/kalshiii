@@ -46,9 +46,14 @@ function signRequest(method, path) {
   // Private key must be in PEM format
   let privateKey = KALSHI_SECRET;
 
-  // If the secret doesn't have PEM headers, wrap it
+  // Rebuild PEM if line breaks were stripped by env variable storage
   if (!privateKey.includes("-----BEGIN")) {
-    privateKey = `-----BEGIN PRIVATE KEY-----\n${privateKey}\n-----END PRIVATE KEY-----`;
+    // Raw base64 only — wrap it
+    const body = privateKey.replace(/\s/g, "").match(/.{1,64}/g).join("\n");
+    privateKey = `-----BEGIN PRIVATE KEY-----\n${body}\n-----END PRIVATE KEY-----`;
+  } else {
+    // Has headers but line breaks may be \n literals instead of real breaks
+    privateKey = privateKey.replace(/\\n/g, "\n");
   }
 
   const message = timestampSeconds + method.toUpperCase() + path;
