@@ -1,0 +1,126 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Kalshi Proxy API",
+    "version": "1.0.0",
+    "description": "Proxy API for live Kalshi market data used by a custom GPT"
+  },
+  "servers": [
+    {
+      "url": "https://YOUR-RAILWAY-APP.up.railway.app"
+    }
+  ],
+  "paths": {
+    "/healthz": {
+      "get": {
+        "operationId": "healthCheck",
+        "summary": "Health check",
+        "responses": {
+          "200": {
+            "description": "Service is healthy"
+          }
+        }
+      }
+    },
+    "/markets": {
+      "get": {
+        "operationId": "getMarkets",
+        "summary": "Get Kalshi markets",
+        "parameters": [
+          {
+            "name": "event_ticker",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Market list"
+          }
+        }
+      }
+    },
+    "/market/{ticker}": {
+      "get": {
+        "operationId": "getMarket",
+        "summary": "Get one Kalshi market by ticker",
+        "parameters": [
+          {
+            "name": "ticker",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Market details"
+          }
+        }
+      }
+    },
+    "/orderbook/{ticker}": {
+      "get": {
+        "operationId": "getOrderbook",
+        "summary": "Get orderbook for a Kalshi market",
+        "parameters": [
+          {
+            "name": "ticker",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Orderbook details"
+          }
+        }
+      }
+    },
+    "/trades/{ticker}": {
+      "get": {
+        "operationId": "getTrades",
+        "summary": "Get recent trades for a Kalshi market",
+        "parameters": [
+          {
+            "name": "ticker",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Recent trades"
+          }
+        }
+      }
+    }
+  }
+}
