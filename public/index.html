@@ -379,6 +379,8 @@ const EVT = {
 };
 const state = {};
 let cachedMarket = null, fetchTimer = null;
+let historicalBase = 0.50;   // updated from /market/:ticker/stats
+let priceStats = null;        // { avg_yes_price, price_change, volatility, trend, snapshot_count }
 
 function logit(p){return Math.log(p/(1-p));}
 function sigmoid(x){return 1/(1+Math.exp(-x));}
@@ -399,7 +401,7 @@ function toggle(id) {
 }
 
 function updateProb() {
-  const base = 0.50;
+  const base = historicalBase;
   let logitP = logit(base);
   const active = [];
   Object.entries(state).forEach(([id, on]) => {
@@ -469,10 +471,29 @@ async function autoFetch(ticker) {
     document.getElementById('lp-strike').textContent = m.floor_strike ? '$'+Number(m.floor_strike).toLocaleString() : '—';
     document.getElementById('live-preview').classList.add('on');
     setDot('ok',`live · ${m.subtitle||ticker} · ${m.status}`);
+
+    // Fetch historical stats to seed base rate prior
+    try {
+      const sr = await fetch(`${PROXY}/market/${encodeURIComponent(ticker)}/stats`,{headers:{'x-proxy-api-key':PKEY}});
+      if (sr.ok) {
+        const stats = await sr.json();
+        if (stats && stats.avg_yes_price != null && stats.snapshot_count > 0) {
+          priceStats = stats;
+          historicalBase = stats.avg_yes_price;
+          const badge = document.getElementById('prior-display');
+          badge.textContent = (historicalBase*100).toFixed(0)+'%';
+          badge.title = `Historical avg from ${stats.snapshot_count} snapshots (${stats.window_hours}h)`;
+          updateProb();
+        }
+      }
+    } catch(_) {}
+
   } catch(e) {
     setDot('fail','ticker not found — check series or enter price manually');
     document.getElementById('live-preview').classList.remove('on');
     cachedMarket = null;
+    historicalBase = 0.50;
+    priceStats = null;
   }
 }
 
@@ -560,16 +581,21 @@ async function runAnalysis() {
     ? `Live Kalshi: strike=$${liveMarket.floor_strike}, last=${liveMarket.last_price_dollars}, status=${liveMarket.status}, closes=${liveMarket.close_time}, resolution rule: "${liveMarket.rules_primary}"`
     : '';
 
+  const histCtx = priceStats && priceStats.snapshot_count > 0
+    ? `Price history (${priceStats.window_hours}h, ${priceStats.snapshot_count} snapshots): avg=${(priceStats.avg_yes_price*100).toFixed(1)}% | range=${(priceStats.min_yes_price*100).toFixed(1)}%–${(priceStats.max_yes_price*100).toFixed(1)}% | change=${priceStats.price_change>=0?'+':''}${(priceStats.price_change*100).toFixed(1)}% | volatility=${(priceStats.volatility*100).toFixed(2)}% | trend=${priceStats.trend}`
+    : 'Price history: not yet available (pipeline collecting data)';
+
   const prompt = `You are a strict prediction market quant analyst. Return ONLY valid JSON, no markdown, no preamble.
 
 MARKET: ${q}
 Market implied probability: ${(marketP*100).toFixed(1)}%
-Base rate prior: ${(base*100).toFixed(0)}%
+Base rate prior: ${(base*100).toFixed(0)}% ${priceStats&&priceStats.snapshot_count>0?`(from ${priceStats.snapshot_count} historical snapshots)`:'(default — no history yet)'}
 Bayesian posterior (computed from evidence checklist): ${(posterior*100).toFixed(0)}%
 Final model probability: ${(finalModelP*100).toFixed(1)}%
 Active evidence: ${activeLabels}
 User context: ${ctx||'none'}
 ${liveCtx}
+${histCtx}
 Resolution: ${resDate||'not specified'}
 Bankroll: ${bankroll?'$'+bankroll:'not provided'}
 Kelly fraction: ${kf}x
