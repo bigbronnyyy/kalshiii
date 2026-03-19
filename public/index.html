@@ -626,16 +626,13 @@ Return exactly this JSON:
 
   try {
     setLoading('COMPUTING SIGNAL...');
-    const res = await fetch('https://api.anthropic.com/v1/messages',{
+    const res = await fetch(`${PROXY}/analyze`,{
       method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({
-        model:'claude-sonnet-4-20250514',
-        max_tokens:1000,
-        messages:[{role:'user',content:prompt}]
-      })
+      headers:{'Content-Type':'application/json','x-proxy-api-key':PKEY},
+      body:JSON.stringify({prompt, model:'claude-sonnet-4-20250514', max_tokens:1000})
     });
     const data = await res.json();
+    if (!res.ok) throw new Error(data.message||'API error');
     const txt = (data.content||[]).map(b=>b.text||'').join('');
     let parsed;
     try{parsed=JSON.parse(txt.replace(/```json|```/g,'').trim());}
