@@ -1,98 +1,70 @@
-# Kalshi Railway Template
+# Kalshi Quant Bot
 
-This is a simple Railway-ready backend that gives your custom GPT live access to Kalshi market data.
+A Railway-ready backend with a Polymarket-style data pipeline that gives your frontend live + historical Kalshi market data with Claude AI analysis.
 
 ## What this does
-- Connects securely to Kalshi using your API key and secret
-- Exposes simple endpoints your GPT can use:
-  - `/healthz`
-  - `/markets`
-  - `/market/:ticker`
-  - `/orderbook/:ticker`
-  - `/trades/:ticker`
-- Protects your proxy with `PROXY_API_KEY`
 
-## Before you start
-You need:
-1. A Railway account
-2. A GitHub account
-3. Your Kalshi API key and secret
+- **Data pipeline**: Continuously polls Kalshi REST API + subscribes to WebSocket feed, storing snapshots and trades in SQLite
+- **Proxy endpoints**: Secure proxy for Kalshi API calls (markets, orderbook, trades)
+- **History endpoints**: Price history, market stats (avg, volatility, trend), top movers
+- **Claude AI proxy**: Routes Claude analysis through backend so the API key stays server-side
+- **Quant frontend**: Bayesian probability engine + EV + Kelly sizing + Claude signal generation
 
-## Step-by-step setup
+## Endpoints
 
-### 1) Download or upload this repo to GitHub
-- Create a new GitHub repository
-- Upload all files from this folder
+| Endpoint | Description |
+|---|---|
+| `GET /healthz` | Health check |
+| `GET /markets` | List markets (proxied to Kalshi) |
+| `GET /market/:ticker` | Single market data |
+| `GET /orderbook/:ticker` | Order book |
+| `GET /trades/:ticker` | Recent trades |
+| `GET /market/:ticker/history?hours=24` | Stored price history from pipeline |
+| `GET /market/:ticker/stats?hours=24` | Avg, min, max, volatility, trend |
+| `GET /markets/movers?hours=1&min_move=0.05` | Top price movers |
+| `GET /db/status` | Pipeline database status |
+| `POST /analyze` | Claude AI analysis proxy |
 
-### 2) Deploy to Railway
-- Go to Railway
-- Click **New Project**
-- Choose **Deploy from GitHub repo**
-- Select your new repo
+## Setup
 
-### 3) Add environment variables in Railway
-In Railway, open your project and add these variables:
+### 1) Clone and configure
 
-- `KALSHI_KEY`
-- `KALSHI_SECRET`
-- `PROXY_API_KEY`
-- `PORT=3000`
-
-Use a long random value for `PROXY_API_KEY`.
-
-### 4) Get your Railway URL
-Railway will give you a URL like:
-
-`https://your-app-name.up.railway.app`
-
-### 5) Test your backend
-Open this in your browser:
-
-`https://your-app-name.up.railway.app/healthz`
-
-You should see a JSON response showing the service is healthy.
-
-## Connect to your Custom GPT
-
-### 1) Open your GPT builder
-Go to **Configure** -> **Actions**.
-
-### 2) Paste the OpenAPI schema
-Use the contents of `openapi.json`.
-
-### 3) Replace the server URL
-In `openapi.json`, replace:
-
-`https://YOUR-RAILWAY-APP.up.railway.app`
-
-with your real Railway URL.
-
-### 4) Add the header
-Set this header in your action auth/settings:
-
-- Header name: `x-proxy-api-key`
-- Header value: your `PROXY_API_KEY`
-
-## Recommended GPT instruction block
-Paste this into your GPT instructions:
-
-```text
-When a Kalshi market is mentioned, use live action calls whenever possible.
-
-Rules:
-1. If the user gives a ticker, call getMarket first.
-2. If pricing depth matters, call getOrderbook.
-3. If recent flow matters, call getTrades.
-4. Use live prices instead of guessing.
-5. If live data is unavailable, clearly say so.
+```bash
+cp env.example .env
+# Fill in KALSHI_KEY, KALSHI_SECRET, PROXY_API_KEY, ANTHROPIC_API_KEY
+npm install
+npm start
 ```
 
-## Notes
-- This template is read-only. It does not place trades.
-- That is intentional. Start with analysis first.
-- Keep your Kalshi credentials private.
+### 2) Deploy to Railway
 
-## Troubleshooting
-- If Railway deploy fails, make sure the repo contains `package.json` and `server.js`.
-- If Kalshi requests fail, double-check your API key and secret.
-- If your GPT cannot call the action, double-check the Railway URL and `x-proxy-api-key` header.
+- Create a new Railway project from this GitHub repo
+- Add environment variables (see `env.example`)
+- Railway auto-deploys on push
+
+### Environment variables
+
+| Variable | Required | Description |
+|---|---|---|
+| `KALSHI_KEY` | Yes | Kalshi API key |
+| `KALSHI_SECRET` | Yes | Kalshi RSA private key (PEM or raw base64) |
+| `PROXY_API_KEY` | No | Optional key to protect proxy endpoints |
+| `ANTHROPIC_API_KEY` | No | For Claude AI analysis endpoint |
+| `PORT` | No | Server port (default: 3000) |
+| `DB_PATH` | No | SQLite file path (default: kalshi.db) |
+| `SNAPSHOT_INTERVAL_SEC` | No | REST snapshot frequency (default: 60) |
+| `REFRESH_INTERVAL_SEC` | No | Market list refresh frequency (default: 300) |
+
+## Data pipeline
+
+The pipeline runs automatically on startup:
+
+1. **REST poller** — fetches all open markets, stores in SQLite, takes price snapshots every `SNAPSHOT_INTERVAL_SEC` seconds
+2. **WebSocket client** — subscribes to real-time ticker and orderbook updates, records snapshots as they arrive
+3. **Orchestrator** — refreshes market list every `REFRESH_INTERVAL_SEC` seconds, subscribes new tickers to WebSocket
+
+## Notes
+
+- This template is read-only. It does not place trades.
+- Keep your Kalshi credentials private.
+- The `KALSHI_SECRET` can be provided as a raw base64 private key or full PEM — the server normalizes both formats.
