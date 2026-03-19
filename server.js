@@ -6,6 +6,8 @@ import rateLimit from "express-rate-limit";
 import helmet from "helmet";
 import cors from "cors";
 import morgan from "morgan";
+import { createDb, getMarketStats, getPriceHistory, getMovers, getDbStatus } from "./db.js";
+import { KalshiPipeline } from "./pipeline.js";
 
 dotenv.config();
 
@@ -136,6 +138,58 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: "internal_error", message: err?.message });
 });
 
+// ─── History / stats endpoints ────────────────────────────────────────────────
+
+app.get("/market/:ticker/history", requireProxyApiKey, (req, res) => {
+  const ticker = req.params.ticker;
+  const hours  = parseFloat(req.query.hours) || 24;
+  try {
+    const history = getPriceHistory(db, ticker, hours);
+    res.json({ ticker, hours, count: history.length, history });
+  } catch (err) {
+    res.status(500).json({ error: "db_error", message: err.message });
+  }
+});
+
+app.get("/market/:ticker/stats", requireProxyApiKey, (req, res) => {
+  const ticker = req.params.ticker;
+  const hours  = parseFloat(req.query.hours) || 24;
+  try {
+    const stats = getMarketStats(db, ticker, hours);
+    if (!stats) return res.json({ ticker, hours, message: "no_data" });
+    res.json(stats);
+  } catch (err) {
+    res.status(500).json({ error: "db_error", message: err.message });
+  }
+});
+
+app.get("/markets/movers", requireProxyApiKey, (req, res) => {
+  const hours   = parseFloat(req.query.hours)    || 1;
+  const minMove = parseFloat(req.query.min_move) || 0.05;
+  try {
+    const movers = getMovers(db, hours, minMove);
+    res.json({ hours, min_move: minMove, count: movers.length, movers });
+  } catch (err) {
+    res.status(500).json({ error: "db_error", message: err.message });
+  }
+});
+
+app.get("/db/status", (req, res) => {
+  try {
+    res.json(getDbStatus(db));
+  } catch (err) {
+    res.status(500).json({ error: "db_error", message: err.message });
+  }
+});
+
+// ─── Start server + pipeline ──────────────────────────────────────────────────
+
+const db       = createDb();
+const pipeline = new KalshiPipeline(db);
+
 app.listen(PORT, () => {
   console.log(`Kalshi proxy running on port ${PORT}`);
+  pipeline.start().catch((err) => {
+    console.error("Pipeline failed to start:", err.message);
+  });
 });
