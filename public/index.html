@@ -629,7 +629,7 @@ Return exactly this JSON:
     const res = await fetch(`${PROXY}/analyze`,{
       method:'POST',
       headers:{'Content-Type':'application/json','x-proxy-api-key':PKEY},
-      body:JSON.stringify({prompt, model:'claude-sonnet-4-5-20250514', max_tokens:1000})
+      body:JSON.stringify({prompt, model:'claude-sonnet-4-6', max_tokens:1000})
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.message || data.error_description || (data.error?.message) || JSON.stringify(data));

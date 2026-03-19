@@ -191,7 +191,7 @@ app.post("/analyze", requireProxyApiKey, async (req, res) => {
   if (!apiKey) {
     return res.status(503).json({ error: "no_api_key", message: "ANTHROPIC_API_KEY not configured on server" });
   }
-  const { prompt, model = "claude-sonnet-4-20250514", max_tokens = 1200 } = req.body;
+  const { prompt, model = "claude-sonnet-4-6", max_tokens = 1200 } = req.body;
   if (!prompt) return res.status(400).json({ error: "missing_prompt" });
   try {
     const r = await fetch("https://api.anthropic.com/v1/messages", {
