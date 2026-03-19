@@ -182,6 +182,34 @@ app.get("/db/status", (req, res) => {
   }
 });
 
+// ─── Claude analysis proxy ────────────────────────────────────────────────────
+// Routes Claude API calls through the backend so the API key stays server-side.
+// Falls back gracefully if ANTHROPIC_API_KEY is not set.
+
+app.post("/analyze", requireProxyApiKey, async (req, res) => {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    return res.status(503).json({ error: "no_api_key", message: "ANTHROPIC_API_KEY not configured on server" });
+  }
+  const { prompt, model = "claude-sonnet-4-20250514", max_tokens = 1200 } = req.body;
+  if (!prompt) return res.status(400).json({ error: "missing_prompt" });
+  try {
+    const r = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01"
+      },
+      body: JSON.stringify({ model, max_tokens, messages: [{ role: "user", content: prompt }] })
+    });
+    const data = await r.json();
+    res.status(r.status).json(data);
+  } catch (err) {
+    res.status(502).json({ error: "upstream_error", message: err.message });
+  }
+});
+
 // ─── Start server + pipeline ──────────────────────────────────────────────────
 
 const db       = createDb();
