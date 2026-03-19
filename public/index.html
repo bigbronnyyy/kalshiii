@@ -635,13 +635,42 @@ Return exactly this JSON:
     if (!res.ok) throw new Error(data.message || data.error_description || (data.error?.message) || JSON.stringify(data));
     const txt = (data.content||[]).map(b=>b.text||'').join('');
     let parsed;
-    try{parsed=JSON.parse(txt.replace(/```json|```/g,'').trim());}
-    catch(e){
-      document.getElementById('loading').classList.remove('on');
-      document.getElementById('run-btn').disabled=false;
-      setStatus('Parse error — try again.',true);
-      return;
-    }
+    try {
+  // Try 1: direct parse
+  let clean = txt.trim();
+  try { parsed = JSON.parse(clean); } catch(_) {}
+
+  // Try 2: strip markdown fences
+  if (!parsed) {
+    clean = txt.replace(/```json|```/gi, '').trim();
+    try { parsed = JSON.parse(clean); } catch(_) {}
+  }
+
+  // Try 3: extract first { ... } block
+  if (!parsed) {
+    const match = txt.match(/\{[\s\S]*\}/);
+    if (match) { try { parsed = JSON.parse(match[0]); } catch(_) {} }
+  }
+
+  // Try 4: fix common issues — trailing commas, unquoted keys
+  if (!parsed) {
+    const fixed = txt
+      .replace(/```json|```/gi, '')
+      .replace(/,\s*([}\]])/g, '$1')
+      .replace(/([{,]\s*)(\w+)(\s*:)/g, '$1"$2"$3')
+      .match(/\{[\s\S]*\}/)?.[0];
+    if (fixed) { try { parsed = JSON.parse(fixed); } catch(_) {} }
+  }
+
+  if (!parsed) throw new Error('unparseable');
+
+} catch(e) {
+  document.getElementById('loading').classList.remove('on');
+  document.getElementById('run-btn').disabled = false;
+  setStatus('Parse failed — raw response: ' + txt.slice(0, 120), true);
+  return;
+}
+
     render(parsed, marketP, finalModelP, base, posterior, bankroll, kf, usedLive, k, evVal, evS);
   } catch(e){
     document.getElementById('loading').classList.remove('on');
