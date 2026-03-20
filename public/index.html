@@ -512,9 +512,35 @@
     <!-- TAB 1: TRADE DECK -->
     <div id="deck" class="tab-content">
       <h2 style="margin-bottom: 1.5rem; font-size: 18px;">Trade Deck</h2>
-      <div class="ticker-row">
-        <input type="text" id="ticker-input" placeholder="e.g. KXBTCD-26MAR1900-T74999.99" />
-        <button style="padding: 0.75rem 1.5rem; background: var(--card); border: 1px solid var(--border); color: var(--green); cursor: pointer; border-radius: 6px;" onclick="fetchTickerData()">FETCH</button>
+
+      <!-- Browse by series -->
+      <div style="margin-bottom: 0.75rem;">
+        <label style="display: block; font-size: 11px; color: var(--text-dim); margin-bottom: 0.5rem; text-transform: uppercase;">Browse by series (e.g. KXBTCD, KXGASP, KXETHD)</label>
+        <div class="ticker-row">
+          <input type="text" id="series-input" placeholder="e.g. KXGASP" onkeydown="if(event.key==='Enter')browseMarkets()" />
+          <button style="padding: 0.75rem 1.5rem; background: var(--card); border: 1px solid var(--border); color: var(--green); cursor: pointer; border-radius: 6px;" onclick="browseMarkets()">BROWSE</button>
+        </div>
+        <div id="market-list" style="display:none; background: var(--card); border: 1px solid var(--border); border-radius: 6px; margin-top: 0.5rem; max-height: 200px; overflow-y: auto;"></div>
+      </div>
+
+      <!-- Direct ticker input -->
+      <div style="margin-bottom: 1rem;">
+        <label style="display: block; font-size: 11px; color: var(--text-dim); margin-bottom: 0.5rem; text-transform: uppercase;">Or enter ticker directly</label>
+        <div class="ticker-row">
+          <input type="text" id="ticker-input" placeholder="e.g. KXBTCD-26MAR1900-T74999.99" onkeydown="if(event.key==='Enter')fetchTickerData()" />
+          <button style="padding: 0.75rem 1.5rem; background: var(--card); border: 1px solid var(--border); color: var(--green); cursor: pointer; border-radius: 6px;" onclick="fetchTickerData()">FETCH</button>
+        </div>
+        <div id="ticker-status" style="font-size: 12px; color: var(--text-dim); margin-top: 0.5rem; min-height: 18px;"></div>
+      </div>
+
+      <!-- Live preview -->
+      <div id="live-preview" style="display:none; background: rgba(0,200,83,0.06); border: 1px solid rgba(0,200,83,0.2); border-radius: 6px; padding: 0.75rem 1rem; margin-bottom: 1.5rem;">
+        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 1rem;">
+          <div><div style="font-size: 10px; color: var(--green); opacity: 0.7; text-transform: uppercase; margin-bottom: 3px;">Last price</div><div style="font-size: 14px; font-weight: 600; color: var(--green);" id="lp-price">—</div></div>
+          <div><div style="font-size: 10px; color: var(--green); opacity: 0.7; text-transform: uppercase; margin-bottom: 3px;">Yes ask</div><div style="font-size: 14px; font-weight: 600; color: var(--green);" id="lp-ask">—</div></div>
+          <div><div style="font-size: 10px; color: var(--green); opacity: 0.7; text-transform: uppercase; margin-bottom: 3px;">Yes bid</div><div style="font-size: 14px; font-weight: 600; color: var(--green);" id="lp-bid">—</div></div>
+          <div><div style="font-size: 10px; color: var(--green); opacity: 0.7; text-transform: uppercase; margin-bottom: 3px;">Strike</div><div style="font-size: 14px; font-weight: 600; color: var(--green);" id="lp-strike">—</div></div>
+        </div>
       </div>
 
       <div class="prob-row">
@@ -800,29 +826,88 @@ function selectOpportunity(ticker, price) {
 }
 
 // Trade Deck
+async function browseMarkets() {
+  const series = document.getElementById('series-input').value.trim().toUpperCase();
+  if (!series) return;
+  const list = document.getElementById('market-list');
+  list.style.display = 'block';
+  list.innerHTML = '<div style="padding: 0.75rem; font-size: 12px; color: var(--text-dim);">Fetching...</div>';
+  try {
+    const r = await fetch(`${PROXY}/markets?api_key=${PKEY}&series_ticker=${series}&limit=20`);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const data = await r.json();
+    const markets = (data.markets || []).filter(m => m.status !== 'finalized').slice(0, 15);
+    if (!markets.length) {
+      list.innerHTML = `<div style="padding: 0.75rem; font-size: 12px; color: var(--text-dim);">No active markets for ${series}</div>`;
+      return;
+    }
+    list.innerHTML = markets.map(m => {
+      const p = m.last_price_dollars ?? m.yes_ask_dollars ?? null;
+      const pd = p && parseFloat(p) > 0 ? '$' + p : 'no price';
+      return `<div onclick="selectMarketFromBrowse('${m.ticker}','${m.close_time||''}')" style="padding: 0.75rem 1rem; border-bottom: 1px solid var(--border); cursor: pointer; display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 0.5rem;" onmouseover="this.style.background='rgba(0,200,83,0.05)'" onmouseout="this.style.background=''">
+        <div>
+          <div style="font-size: 13px; color: var(--text);">${m.subtitle || m.title || m.ticker}</div>
+          <div style="font-size: 11px; color: var(--text-dim); margin-top: 2px;">${m.ticker}</div>
+        </div>
+        <div style="font-size: 13px; font-weight: 600; color: var(--green);">${pd}</div>
+      </div>`;
+    }).join('');
+  } catch(e) {
+    list.innerHTML = `<div style="padding: 0.75rem; font-size: 12px; color: var(--red);">Error: ${e.message}</div>`;
+  }
+}
+
+function selectMarketFromBrowse(ticker, closeTime) {
+  document.getElementById('ticker-input').value = ticker;
+  document.getElementById('market-list').style.display = 'none';
+  fetchTickerData();
+}
+
 async function fetchTickerData() {
   const ticker = document.getElementById('ticker-input').value.trim().toUpperCase();
   if (!ticker) return;
+  const statusEl = document.getElementById('ticker-status');
+  statusEl.textContent = 'Fetching...';
+  statusEl.style.color = 'var(--text-dim)';
+  document.getElementById('live-preview').style.display = 'none';
+
   try {
     const r = await fetch(`${PROXY}/market/${encodeURIComponent(ticker)}`, {
       headers: { 'x-proxy-api-key': PKEY }
     });
-    if (!r.ok) throw new Error('Ticker not found');
     const d = await r.json();
+    if (!r.ok) throw new Error(d.message || d.error || `HTTP ${r.status}`);
+    const m = d.market || d;
+
+    // Populate live preview
+    const raw = m.last_price_dollars ?? m.yes_ask_dollars ?? m.yes_bid_dollars ?? null;
+    document.getElementById('lp-price').textContent = raw ? '$' + raw : '—';
+    document.getElementById('lp-ask').textContent = m.yes_ask_dollars ? '$' + m.yes_ask_dollars : '—';
+    document.getElementById('lp-bid').textContent = m.yes_bid_dollars ? '$' + m.yes_bid_dollars : '—';
+    document.getElementById('lp-strike').textContent = m.floor_strike ? '$' + Number(m.floor_strike).toLocaleString() : '—';
+    document.getElementById('live-preview').style.display = 'block';
+
+    statusEl.textContent = `✓ ${m.subtitle || ticker} · ${m.status}`;
+    statusEl.style.color = 'var(--green)';
+
+    // Fetch stats to seed base rate prior
     try {
       const sr = await fetch(`${PROXY}/market/${encodeURIComponent(ticker)}/stats`, {
         headers: { 'x-proxy-api-key': PKEY }
       });
       if (sr.ok) {
         const stats = await sr.json();
-        if (stats && stats.avg_yes_price) {
+        if (stats && stats.avg_yes_price != null && stats.snapshot_count > 0) {
           historicalBase = stats.avg_yes_price;
           updateProb();
         }
       }
     } catch(_) {}
+
   } catch(e) {
-    showError('Ticker not found');
+    statusEl.textContent = '✗ ' + e.message;
+    statusEl.style.color = 'var(--red)';
+    document.getElementById('live-preview').style.display = 'none';
   }
 }
 
