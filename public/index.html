@@ -585,9 +585,9 @@
 
       <!-- Browse by series -->
       <div style="margin-bottom: 0.75rem;">
-        <label style="display: block; font-size: 11px; color: var(--text-dim); margin-bottom: 0.5rem; text-transform: uppercase;">Browse by series (e.g. KXBTCD, KXGASP, KXETHD)</label>
+        <label style="display: block; font-size: 11px; color: var(--text-dim); margin-bottom: 0.5rem; text-transform: uppercase;">Browse by keyword (e.g. Bitcoin, Trump, NBA)</label>
         <div class="ticker-row">
-          <input type="text" id="series-input" placeholder="e.g. KXGASP" onkeydown="if(event.key==='Enter')browseMarkets()" />
+          <input type="text" id="series-input" placeholder="e.g. Bitcoin" onkeydown="if(event.key==='Enter')browseMarkets()" />
           <button style="padding: 0.75rem 1.5rem; background: var(--card); border: 1px solid var(--border); color: var(--green); cursor: pointer; border-radius: 6px;" onclick="browseMarkets()">BROWSE</button>
         </div>
         <div id="market-list" style="display:none; background: var(--card); border: 1px solid var(--border); border-radius: 6px; margin-top: 0.5rem; max-height: 200px; overflow-y: auto;"></div>
