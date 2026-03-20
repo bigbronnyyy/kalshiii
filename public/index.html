@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Kalshi Quant Bot</title>
+<title>Kalshi LMSR Scanner</title>
 <style>
 :root {
   --bg: #0d0d0d;
@@ -27,7 +27,7 @@ body {
   line-height: 1.5;
 }
 
-.container { max-width: 900px; margin: 0 auto; padding: 1rem; }
+.container { max-width: 1200px; margin: 0 auto; padding: 1rem; }
 
 /* Tab bar */
 .tab-bar {
@@ -62,7 +62,7 @@ body {
 .tab-content { display: none; }
 .tab-content.active { display: block; }
 
-/* Cards & fields */
+/* Cards */
 .card {
   background: var(--card);
   border: 1px solid var(--border);
@@ -81,6 +81,7 @@ body {
   display: block;
 }
 
+/* Fields */
 .field {
   margin-bottom: 12px;
 }
@@ -112,154 +113,6 @@ body {
 .field select:focus,
 .field textarea:focus {
   border-color: var(--accent);
-}
-
-.field input::placeholder,
-.field textarea::placeholder {
-  color: var(--text3);
-}
-
-/* Grid layouts */
-.field-grid {
-  display: grid;
-  gap: 12px;
-  margin-bottom: 12px;
-}
-
-.field-grid.row-2 { grid-template-columns: 1fr 1fr; }
-.field-grid.row-3 { grid-template-columns: repeat(3, 1fr); }
-
-.field-row {
-  display: flex;
-  gap: 12px;
-  align-items: flex-end;
-  margin-bottom: 12px;
-}
-
-.field-row .field { margin: 0; flex: 1; }
-.field-row button { margin: 0; }
-
-/* Prob display */
-.prob-display {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
-  margin-bottom: 12px;
-}
-
-.prob-box {
-  background: rgba(255,255,255,0.02);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 12px;
-  text-align: center;
-}
-
-.prob-box-label {
-  font-size: 11px;
-  color: var(--text3);
-  margin-bottom: 6px;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-.prob-box-value {
-  font-size: 24px;
-  font-weight: 600;
-  color: var(--accent);
-}
-
-/* Evidence accordion */
-.accordion-btn {
-  width: 100%;
-  padding: 12px 14px;
-  background: rgba(255,255,255,0.02);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  color: var(--text);
-  cursor: pointer;
-  font-size: 13px;
-  font-weight: 500;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
-}
-
-.accordion-btn:hover {
-  border-color: var(--accent);
-}
-
-.accordion-content {
-  display: none;
-  padding-bottom: 12px;
-}
-
-.accordion-content.open {
-  display: block;
-}
-
-.evidence-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-}
-
-.evidence-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px;
-  background: rgba(255,255,255,0.01);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.evidence-item:hover {
-  background: rgba(255,255,255,0.03);
-  border-color: var(--accent);
-}
-
-.evidence-btn {
-  width: 24px;
-  height: 24px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: transparent;
-  color: var(--text3);
-  cursor: pointer;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 600;
-  transition: all 0.2s;
-}
-
-.evidence-btn.bull {
-  border-color: var(--accent);
-  color: var(--accent);
-  background: rgba(0,200,83,0.1);
-}
-
-.evidence-btn.bear {
-  border-color: var(--red);
-  color: var(--red);
-  background: rgba(255,77,77,0.1);
-}
-
-.evidence-label {
-  flex: 1;
-  font-size: 13px;
-  color: var(--text);
-}
-
-.evidence-weight {
-  font-size: 11px;
-  color: var(--text3);
-  font-weight: 500;
 }
 
 /* Buttons */
@@ -294,49 +147,129 @@ body {
 
 .btn-row .btn { flex: 1; }
 
-/* Status & Loading */
-.status-msg {
+/* Scanner table */
+.scanner-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  margin-top: 12px;
+}
+
+.scanner-table th {
+  text-align: left;
+  padding: 12px;
+  border-bottom: 1px solid var(--border);
+  font-weight: 600;
+  color: var(--text3);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  position: sticky;
+  top: 0;
+  background: var(--bg);
+  z-index: 10;
+}
+
+.scanner-table td {
+  padding: 12px;
+  border-bottom: 1px solid rgba(255,255,255,0.02);
+}
+
+.scanner-table tr {
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.scanner-table tbody tr:hover {
+  background: rgba(0,200,83,0.08);
+}
+
+.sig-badge {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.sig-buy {
+  background: rgba(0,200,83,0.2);
+  color: var(--accent);
+  border: 1px solid rgba(0,200,83,0.4);
+}
+
+.sig-sell {
+  background: rgba(255,77,77,0.2);
+  color: var(--red);
+  border: 1px solid rgba(255,77,77,0.4);
+}
+
+.conf-high { color: var(--accent); }
+.conf-medium { color: var(--amber); }
+.conf-low { color: var(--text2); }
+
+.edge-positive { color: var(--accent); font-weight: 600; }
+.edge-negative { color: var(--red); font-weight: 600; }
+
+.scan-status {
   font-size: 12px;
   color: var(--text3);
   margin-top: 8px;
-  min-height: 18px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
-.status-msg.error { color: var(--red); }
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text3);
+}
 
-.loading {
-  display: none;
+.status-dot.scanning {
+  background: var(--amber);
+  animation: pulse 1.5s infinite;
+}
+
+.status-dot.idle { background: var(--accent); }
+.status-dot.error { background: var(--red); }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+/* Probabilities */
+.prob-display {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.prob-box {
+  background: rgba(255,255,255,0.02);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px;
   text-align: center;
-  padding: 3rem;
 }
 
-.loading.on { display: block; }
-
-.loading-bar {
-  width: 200px;
-  height: 3px;
-  background: var(--border);
-  border-radius: 2px;
-  overflow: hidden;
-  margin: 0 auto 1rem;
-}
-
-.loading-fill {
-  height: 100%;
-  background: var(--accent);
-  animation: sweep 1.8s ease-in-out infinite;
-}
-
-@keyframes sweep {
-  0% { width: 0; margin-left: 0; }
-  50% { width: 100%; margin-left: 0; }
-  51% { margin-left: 0; }
-  100% { width: 0; margin-left: 100%; }
-}
-
-.loading-txt {
-  font-size: 12px;
+.prob-box-label {
+  font-size: 11px;
   color: var(--text3);
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.prob-box-value {
+  font-size: 24px;
+  font-weight: 600;
+  color: var(--accent);
 }
 
 /* Results */
@@ -352,33 +285,6 @@ body {
   border-radius: 8px;
   padding: 1.5rem;
   margin-bottom: 1rem;
-}
-
-.sig-badge {
-  display: inline-block;
-  font-size: 14px;
-  font-weight: 600;
-  padding: 6px 16px;
-  border-radius: 4px;
-  margin-bottom: 1rem;
-}
-
-.sig-buy {
-  background: rgba(0,200,83,0.15);
-  border: 1px solid rgba(0,200,83,0.3);
-  color: var(--accent);
-}
-
-.sig-sell {
-  background: rgba(255,77,77,0.15);
-  border: 1px solid rgba(255,77,77,0.3);
-  color: var(--red);
-}
-
-.sig-skip {
-  background: rgba(255,255,255,0.04);
-  border: 1px solid var(--border);
-  color: var(--text2);
 }
 
 .verdict-text {
@@ -415,34 +321,6 @@ body {
   color: var(--accent);
 }
 
-/* Tables */
-.table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 13px;
-  margin-top: 12px;
-}
-
-.table th {
-  text-align: left;
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--border);
-  font-weight: 600;
-  color: var(--text3);
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-.table td {
-  padding: 10px 12px;
-  border-bottom: 1px solid rgba(255,255,255,0.02);
-}
-
-.table tr:hover td {
-  background: rgba(0,200,83,0.05);
-}
-
 /* Chat */
 .chat-container {
   display: flex;
@@ -477,13 +355,8 @@ body {
   border-color: rgba(0,200,83,0.2);
 }
 
-.chat-message.user .sender {
-  color: var(--accent);
-}
-
-.chat-message.bot .sender {
-  color: var(--text3);
-}
+.chat-message.user .sender { color: var(--accent); }
+.chat-message.bot .sender { color: var(--text3); }
 
 .sender {
   font-size: 11px;
@@ -518,18 +391,70 @@ body {
   align-self: flex-end;
 }
 
-/* Mobile responsive */
+/* Grid layouts */
+.field-grid {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.field-grid.row-2 { grid-template-columns: 1fr 1fr; }
+.field-grid.row-3 { grid-template-columns: repeat(3, 1fr); }
+
+/* Loading & status */
+.loading {
+  display: none;
+  text-align: center;
+  padding: 3rem;
+}
+
+.loading.on { display: block; }
+
+.loading-bar {
+  width: 200px;
+  height: 3px;
+  background: var(--border);
+  border-radius: 2px;
+  overflow: hidden;
+  margin: 0 auto 1rem;
+}
+
+.loading-fill {
+  height: 100%;
+  background: var(--accent);
+  animation: sweep 1.8s ease-in-out infinite;
+}
+
+@keyframes sweep {
+  0% { width: 0; margin-left: 0; }
+  50% { width: 100%; margin-left: 0; }
+  51% { margin-left: 0; }
+  100% { width: 0; margin-left: 100%; }
+}
+
+.status-msg {
+  font-size: 12px;
+  color: var(--text3);
+  margin-top: 8px;
+  min-height: 18px;
+}
+
+.status-msg.error { color: var(--red); }
+
+/* Responsive */
 @media (max-width: 768px) {
   .prob-display { grid-template-columns: 1fr; }
-  .evidence-grid { grid-template-columns: 1fr; }
   .metrics { grid-template-columns: 1fr 1fr; }
   .field-grid.row-2,
   .field-grid.row-3 { grid-template-columns: 1fr; }
+  .tab { padding: 10px 14px; font-size: 12px; }
+  .scanner-table { font-size: 12px; }
+  .scanner-table td, .scanner-table th { padding: 8px; }
 }
 
 @media (max-width: 480px) {
   .metrics { grid-template-columns: 1fr; }
-  .tab { padding: 10px 14px; font-size: 12px; }
+  .scanner-table { font-size: 11px; }
 }
 </style>
 </head>
@@ -539,24 +464,76 @@ body {
 
 <!-- TAB BAR -->
 <div class="tab-bar">
-  <button class="tab active" onclick="switchTab('trade')">Trade Deck</button>
-  <button class="tab" onclick="switchTab('history')">History</button>
+  <button class="tab active" onclick="switchTab('scanner')">Scanner</button>
+  <button class="tab" onclick="switchTab('analyze')">Analyze</button>
   <button class="tab" onclick="switchTab('chat')">Chat</button>
 </div>
 
-<!-- TAB 1: TRADE DECK -->
-<div class="tab-content active" id="tab-trade">
+<!-- TAB 1: SCANNER (LMSR ARBITRAGE) -->
+<div class="tab-content active" id="tab-scanner">
+
+  <div class="card">
+    <span class="card-label">LMSR Opportunity Scanner</span>
+    <p style="font-size: 12px; color: var(--text2); margin-bottom: 1rem;">
+      Scanning for mispriced contracts using Hanson's LMSR cost function.
+      Edge = Model Price − Market Price. Positive = underpriced (BUY), Negative = overpriced (SELL).
+    </p>
+
+    <div style="display: flex; gap: 12px; margin-bottom: 1rem;">
+      <div class="field" style="flex: 1; margin: 0;">
+        <label>Window (hours)</label>
+        <input type="number" id="scan-hours" value="4" min="1" max="24" />
+      </div>
+      <div class="field" style="flex: 1; margin: 0;">
+        <label>Min edge (%)</label>
+        <input type="number" id="scan-min-edge" value="2" min="0.5" max="10" step="0.5" />
+      </div>
+      <button class="btn" onclick="runScan()" style="align-self: flex-end;">SCAN NOW</button>
+    </div>
+
+    <div class="scan-status" id="scan-status">
+      <span class="status-dot idle"></span>
+      <span id="scan-status-text">Ready to scan</span>
+    </div>
+  </div>
+
+  <div id="scanner-results">
+    <table class="scanner-table" id="scanner-table">
+      <thead>
+        <tr>
+          <th>Ticker</th>
+          <th>Market Price</th>
+          <th>Model Price</th>
+          <th>Edge %</th>
+          <th>Signal</th>
+          <th>Confidence</th>
+          <th>Score</th>
+          <th>Closes</th>
+        </tr>
+      </thead>
+      <tbody id="scanner-body"></tbody>
+    </table>
+  </div>
+
+</div>
+
+<!-- TAB 2: ANALYZE -->
+<div class="tab-content" id="tab-analyze">
 
   <!-- Ticker input -->
   <div class="card">
-    <div class="field-row">
-      <div class="field" style="flex: 2;">
+    <span class="card-label">Selected opportunity</span>
+    <div class="field-grid row-2">
+      <div class="field">
         <label>Ticker</label>
         <input type="text" id="ticker" placeholder="e.g. KXBTCD-26MAR1900-T74999.99" oninput="onTickerInput()" />
       </div>
-      <button class="btn" onclick="fetchTicker()" style="align-self: flex-end;">FETCH</button>
+      <div class="field">
+        <label>Market price (¢)</label>
+        <input type="number" id="market-price" placeholder="auto-filled" min="1" max="99" />
+      </div>
     </div>
-    <div id="auto-status" style="font-size: 11px; color: var(--text3); margin-top: 6px;"></div>
+    <div style="font-size: 11px; color: var(--text3); margin-top: 6px;" id="ticker-status"></div>
   </div>
 
   <!-- Probabilities -->
@@ -578,31 +555,14 @@ body {
     </div>
   </div>
 
-  <!-- Evidence accordion -->
-  <div class="card">
-    <button class="accordion-btn" onclick="toggleAccordion()">
-      <span>Evidence (16 signals) — expand to check</span>
-      <span id="accordion-arrow">▼</span>
-    </button>
-    <div class="accordion-content" id="accordion-content">
-      <div class="evidence-grid" id="evidence-grid"></div>
-    </div>
-  </div>
-
   <!-- Trade sizing -->
   <div class="card">
     <span class="card-label">Size the trade</span>
     <div class="field-grid row-2">
       <div class="field">
-        <label>Market price (¢)</label>
-        <input type="number" id="market-price" placeholder="auto-filled" min="1" max="99" />
-      </div>
-      <div class="field">
         <label>Bankroll ($) optional</label>
         <input type="number" id="bankroll" placeholder="e.g. 500" />
       </div>
-    </div>
-    <div class="field-grid row-2">
       <div class="field">
         <label>Kelly fraction</label>
         <select id="kelly-frac">
@@ -611,27 +571,23 @@ body {
           <option value="1.0">1.0x — full Kelly</option>
         </select>
       </div>
-      <div class="field">
-        <label>Manual model probability (optional)</label>
-        <input type="number" id="model-override" min="1" max="99" placeholder="leave blank to use estimates" />
-      </div>
     </div>
     <div class="field">
       <label>Context (optional)</label>
-      <textarea id="context" rows="2" placeholder="Describe what you see: price vs strike, news, sentiment..."></textarea>
+      <textarea id="context" rows="2" placeholder="Why do you think this is mispriced?"></textarea>
     </div>
   </div>
 
   <!-- Analyze button -->
   <div class="btn-row">
-    <button class="btn" onclick="runAnalysis()" id="run-btn">▶ Run Analysis</button>
+    <button class="btn" onclick="runAnalysis()" id="run-btn">▶ Run Deep Analysis</button>
   </div>
   <div class="status-msg" id="status-msg"></div>
 
   <!-- Loading -->
   <div class="loading" id="loading">
     <div class="loading-bar"><div class="loading-fill"></div></div>
-    <div class="loading-txt">Computing...</div>
+    <div style="font-size: 12px; color: var(--text3);">Computing...</div>
   </div>
 
   <!-- Results -->
@@ -656,80 +612,13 @@ body {
 
 </div>
 
-<!-- TAB 2: HISTORY -->
-<div class="tab-content" id="tab-history">
-
-  <!-- DB Status -->
-  <div class="card">
-    <span class="card-label">Market data status</span>
-    <div style="display: grid; gap: 8px;">
-      <div style="display: flex; justify-content: space-between;">
-        <span style="color: var(--text3);">Markets tracked:</span>
-        <span id="db-markets">—</span>
-      </div>
-      <div style="display: flex; justify-content: space-between;">
-        <span style="color: var(--text3);">Snapshots:</span>
-        <span id="db-snapshots">—</span>
-      </div>
-      <div style="display: flex; justify-content: space-between;">
-        <span style="color: var(--text3);">Last update:</span>
-        <span id="db-updated">—</span>
-      </div>
-    </div>
-    <button class="btn" onclick="loadDbStatus()" style="width: 100%; margin-top: 1rem;">Refresh</button>
-  </div>
-
-  <!-- Movers -->
-  <div class="card">
-    <span class="card-label">Market movers (last hour)</span>
-    <div id="movers-container" style="overflow-x: auto;">
-      <table class="table" id="movers-table">
-        <thead>
-          <tr>
-            <th>Ticker</th>
-            <th>Price</th>
-            <th>Change</th>
-            <th>Direction</th>
-          </tr>
-        </thead>
-        <tbody id="movers-body"></tbody>
-      </table>
-    </div>
-    <button class="btn" onclick="loadMovers()" style="width: 100%; margin-top: 1rem;">Refresh</button>
-  </div>
-
-  <!-- Price history -->
-  <div class="card">
-    <span class="card-label">Price history</span>
-    <div class="field">
-      <label>Ticker</label>
-      <div style="display: flex; gap: 10px;">
-        <input type="text" id="history-ticker" placeholder="e.g. KXBTCD-26MAR1900-T74999.99" style="flex: 1;" />
-        <button class="btn" onclick="loadHistory()">Load</button>
-      </div>
-    </div>
-    <div id="history-container" style="overflow-x: auto; margin-top: 1rem;">
-      <table class="table" id="history-table">
-        <thead>
-          <tr>
-            <th>Time</th>
-            <th>Price</th>
-          </tr>
-        </thead>
-        <tbody id="history-body"></tbody>
-      </table>
-    </div>
-  </div>
-
-</div>
-
 <!-- TAB 3: CHAT -->
 <div class="tab-content" id="tab-chat">
 
   <div class="chat-container">
     <div class="chat-messages" id="chat-messages"></div>
     <div class="chat-input-area">
-      <textarea id="chat-input" placeholder="Ask about markets, probabilities, strategies..." rows="2"></textarea>
+      <textarea id="chat-input" placeholder="Ask about LMSR, markets, probabilities..." rows="2"></textarea>
       <button class="btn" onclick="sendMessage()">Send</button>
     </div>
   </div>
@@ -742,33 +631,12 @@ body {
 const PROXY = "https://kalshiii-production.up.railway.app";
 const PKEY = "super_random_password_12345678910";
 
-// Evidence configuration
-const EVIDENCE = {
-  mom1: { delta: 0.08, label: "Price trending toward strike" },
-  mom2: { delta: -0.08, label: "Price trending away from strike" },
-  mom3: { delta: 0, label: "Price within 1% of strike" },
-  mom4: { delta: 0.05, label: "Strong volume supporting direction" },
-  mac1: { delta: 0.07, label: "Bullish macro catalyst" },
-  mac2: { delta: -0.07, label: "Bearish macro catalyst" },
-  mac3: { delta: 0.09, label: "Major supply shock" },
-  mac4: { delta: -0.05, label: "Policy response dampening move" },
-  str1: { delta: -0.04, label: "Major psychological level" },
-  str2: { delta: 0.06, label: "Recently broke above strike" },
-  str3: { delta: -0.06, label: "Recent rejection at strike" },
-  str4: { delta: 0.04, label: "Strong support below price" },
-  sen1: { delta: -0.05, label: "Extreme fear/panic" },
-  sen2: { delta: 0.04, label: "Greed/neutral sentiment" },
-  sen3: { delta: -0.02, label: "Resolution >24h" },
-  sen4: { delta: 0.03, label: "Resolution <6h" }
-};
-
 // State
-const state = {};
 let cachedMarket = null;
 let historicalBase = 0.5;
-let priceStats = null;
 let fetchTimer = null;
-let accordionOpen = false;
+let scanAutoRefresh = null;
+let lastScanResult = null;
 
 // Utility functions
 function logit(p) { return Math.log(p / (1 - p)); }
@@ -780,82 +648,87 @@ function switchTab(tab) {
   event.target.classList.add('active');
   document.getElementById(`tab-${tab}`).classList.add('active');
 
-  // Initialize on first load
-  if (tab === 'history') { initHistory(); }
-  if (tab === 'chat') { initChat(); }
+  if (tab === 'chat') initChat();
 }
 
-function toggleAccordion() {
-  const content = document.getElementById('accordion-content');
-  accordionOpen = !accordionOpen;
-  content.classList.toggle('open');
-  document.getElementById('accordion-arrow').textContent = accordionOpen ? '▲' : '▼';
-  if (accordionOpen) renderEvidence();
+function updateScanStatus(msg, state = 'idle') {
+  const dot = document.querySelector('.status-dot');
+  dot.className = 'status-dot ' + state;
+  document.getElementById('scan-status-text').textContent = msg;
 }
 
-function renderEvidence() {
-  const grid = document.getElementById('evidence-grid');
-  if (grid.children.length > 0) return; // Already rendered
+async function runScan() {
+  updateScanStatus('Scanning...', 'scanning');
 
-  let html = '';
-  Object.entries(EVIDENCE).forEach(([id, cfg]) => {
-    const isActive = state[id];
-    const btnClass = isActive ? (cfg.delta >= 0 ? 'bull' : 'bear') : '';
-    const btnText = isActive ? (cfg.delta >= 0 ? '↑' : '↓') : '–';
-    html += `
-      <div class="evidence-item" onclick="toggleEvidence('${id}')">
-        <button class="evidence-btn ${btnClass}" id="evbtn-${id}">${btnText}</button>
-        <span class="evidence-label">${cfg.label}</span>
-        <span class="evidence-weight">${cfg.delta >= 0 ? '+' : ''}${(cfg.delta*100).toFixed(0)}%</span>
-      </div>`;
-  });
-  grid.innerHTML = html;
-}
+  const hours = parseFloat(document.getElementById('scan-hours').value) || 4;
+  const minEdge = parseFloat(document.getElementById('scan-min-edge').value) / 100 || 0.02;
 
-function toggleEvidence(id) {
-  state[id] = !state[id];
-  const btn = document.getElementById(`evbtn-${id}`);
-  const cfg = EVIDENCE[id];
+  try {
+    const r = await fetch(`${PROXY}/scan?hours=${hours}&min_edge=${minEdge}`, {
+      headers: { 'x-proxy-api-key': PKEY }
+    });
+    if (!r.ok) throw new Error('Scan failed');
 
-  btn.classList.remove('bull', 'bear');
-  if (state[id]) {
-    btn.classList.add(cfg.delta >= 0 ? 'bull' : 'bear');
-    btn.textContent = cfg.delta >= 0 ? '↑' : '↓';
-  } else {
-    btn.textContent = '–';
+    const data = await r.json();
+    lastScanResult = data.opportunities;
+
+    renderScanner(data.opportunities);
+    updateScanStatus(`${data.count} opportunities found · Updated ${new Date(data.scan_time).toLocaleTimeString()}`, 'idle');
+
+  } catch(e) {
+    updateScanStatus('Scan error: ' + e.message, 'error');
   }
-  updateProb();
 }
 
-function updateProb() {
-  const base = historicalBase;
-  let logitP = logit(base);
+function renderScanner(opportunities) {
+  const body = document.getElementById('scanner-body');
 
-  Object.entries(state).forEach(([id, on]) => {
-    if (on && EVIDENCE[id].delta !== 0) {
-      logitP += EVIDENCE[id].delta * 2.5;
-    }
-  });
+  if (!opportunities.length) {
+    body.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text3);padding:2rem">No opportunities found</td></tr>';
+    return;
+  }
 
-  const posterior = Math.min(0.95, Math.max(0.05, sigmoid(logitP)));
-  const override = parseFloat(document.getElementById('model-override').value);
-  const modelP = (!isNaN(override) && override > 0) ? override / 100 : posterior;
-
-  document.getElementById('prob-prior').textContent = (base * 100).toFixed(0);
-  document.getElementById('prob-posterior').textContent = (posterior * 100).toFixed(0);
-  document.getElementById('prob-model').textContent = (modelP * 100).toFixed(0);
-
-  return { base, posterior, modelP };
+  body.innerHTML = opportunities.map(opp => `
+    <tr onclick="selectOpportunity('${opp.ticker}', ${opp.market_price})">
+      <td><strong>${opp.ticker}</strong></td>
+      <td>${(opp.market_price*100).toFixed(1)}¢</td>
+      <td>${(opp.model_price*100).toFixed(1)}¢</td>
+      <td class="${opp.edge > 0 ? 'edge-positive' : 'edge-negative'}">
+        ${opp.edge > 0 ? '+' : ''}${opp.edge_pct.toFixed(2)}%
+      </td>
+      <td>
+        <span class="sig-badge ${opp.signal === 'BUY' ? 'sig-buy' : 'sig-sell'}">
+          ${opp.signal}
+        </span>
+      </td>
+      <td><span class="conf-${opp.confidence.toLowerCase()}">${opp.confidence}</span></td>
+      <td>${opp.score.toFixed(3)}</td>
+      <td style="font-size:11px">${new Date(opp.close_time).toLocaleDateString()}</td>
+    </tr>
+  `).join('');
 }
 
+function selectOpportunity(ticker, price) {
+  document.getElementById('ticker').value = ticker;
+  document.getElementById('market-price').value = Math.round(price * 100);
+  onTickerInput();
+
+  // Switch to analyze tab
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  document.querySelector('[onclick*="analyze"]').classList.add('active');
+  document.getElementById('tab-analyze').classList.add('active');
+}
+
+// Ticker auto-fetch
 function onTickerInput() {
   clearTimeout(fetchTimer);
   const q = document.getElementById('ticker').value.trim().toUpperCase();
   if (q.length > 10 && q.includes('-') && !q.includes(' ')) {
-    document.getElementById('auto-status').textContent = 'Fetching data...';
+    document.getElementById('ticker-status').textContent = 'Fetching...';
     fetchTimer = setTimeout(() => fetchTicker(), 800);
   } else {
-    document.getElementById('auto-status').textContent = '';
+    document.getElementById('ticker-status').textContent = '';
     cachedMarket = null;
   }
 }
@@ -865,7 +738,6 @@ async function fetchTicker() {
   if (!ticker) return;
 
   try {
-    document.getElementById('auto-status').textContent = 'Fetching...';
     const r = await fetch(`${PROXY}/market/${encodeURIComponent(ticker)}`, {
       headers: { 'x-proxy-api-key': PKEY }
     });
@@ -875,15 +747,13 @@ async function fetchTicker() {
     if (!d.market) throw new Error('No market data');
 
     cachedMarket = d.market;
-    const m = cachedMarket;
 
-    // Auto-fill price
-    const raw = m.last_price_dollars ?? m.yes_ask_dollars ?? m.yes_bid_dollars ?? null;
+    const raw = d.market.last_price_dollars ?? d.market.yes_ask_dollars ?? null;
     if (raw && parseFloat(raw) > 0) {
       document.getElementById('market-price').value = Math.round(parseFloat(raw) * 100);
     }
 
-    document.getElementById('auto-status').textContent = `✓ ${m.subtitle || ticker} — ${m.status}`;
+    document.getElementById('ticker-status').textContent = `✓ ${d.market.subtitle} — ${d.market.status}`;
 
     // Fetch base rate
     try {
@@ -893,7 +763,6 @@ async function fetchTicker() {
       if (sr.ok) {
         const stats = await sr.json();
         if (stats && stats.avg_yes_price != null) {
-          priceStats = stats;
           historicalBase = stats.avg_yes_price;
           updateProb();
         }
@@ -901,9 +770,22 @@ async function fetchTicker() {
     } catch(_) {}
 
   } catch(e) {
-    document.getElementById('auto-status').textContent = '✗ Ticker not found';
+    document.getElementById('ticker-status').textContent = '✗ ' + e.message;
     cachedMarket = null;
   }
+}
+
+function updateProb() {
+  const base = historicalBase;
+  const marketPrice = parseFloat(document.getElementById('market-price').value) / 100;
+  const override = parseFloat(document.getElementById('model-override').value);
+  const modelP = (!isNaN(override) && override > 0) ? override / 100 : marketPrice;
+
+  document.getElementById('prob-prior').textContent = (base * 100).toFixed(0);
+  document.getElementById('prob-posterior').textContent = (marketPrice * 100).toFixed(0);
+  document.getElementById('prob-model').textContent = (modelP * 100).toFixed(0);
+
+  return { base, modelP };
 }
 
 function setStatus(msg, error = false) {
@@ -914,38 +796,18 @@ function setStatus(msg, error = false) {
 
 // Robust JSON extraction
 function extractJSON(txt) {
-  // 1. Try direct parse
-  try {
-    return JSON.parse(txt.trim());
-  } catch(_) {}
-
-  // 2. Strip markdown fences
-  try {
-    const stripped = txt.replace(/```json|```/gi, '').trim();
-    return JSON.parse(stripped);
-  } catch(_) {}
-
-  // 3. Find first { ... } block
+  try { return JSON.parse(txt.trim()); } catch(_) {}
+  try { return JSON.parse(txt.replace(/```json|```/gi, '').trim()); } catch(_) {}
   const match = txt.match(/\{[\s\S]*\}/);
-  if (match) {
-    try {
-      return JSON.parse(match[0]);
-    } catch(_) {}
-  }
-
-  // 4. Fix common JSON issues
+  if (match) { try { return JSON.parse(match[0]); } catch(_) {} }
   try {
     const fixed = txt
       .replace(/```json|```/gi, '')
       .replace(/,\s*([}\]])/g, '$1')
       .replace(/([{,]\s*)(\w+)(\s*:)/g, '$1"$2"$3')
       .match(/\{[\s\S]*\}/)?.[0];
-
-    if (fixed) {
-      return JSON.parse(fixed);
-    }
+    if (fixed) return JSON.parse(fixed);
   } catch(_) {}
-
   throw new Error('Could not extract JSON from response');
 }
 
@@ -959,8 +821,7 @@ async function runAnalysis() {
   if (!ticker) { setStatus('Enter a ticker', true); return; }
   if (!priceCents || isNaN(priceCents)) { setStatus('Enter market price', true); return; }
 
-  const { base, posterior, modelP } = updateProb();
-  const finalModelP = modelP;
+  const { base, modelP } = updateProb();
   const marketP = priceCents / 100;
 
   setStatus('');
@@ -968,49 +829,28 @@ async function runAnalysis() {
   document.getElementById('loading').classList.add('on');
   document.getElementById('run-btn').disabled = true;
 
-  // Fetch live market if not cached
-  let liveMarket = cachedMarket;
-  if (!liveMarket) {
-    try {
-      const r = await fetch(`${PROXY}/market/${encodeURIComponent(ticker)}`, {
-        headers: { 'x-proxy-api-key': PKEY }
-      });
-      if (r.ok) {
-        const d = await r.json();
-        liveMarket = d.market || null;
-      }
-    } catch(_) {}
-  }
-
-  // Build prompt
-  const activeEvidence = Object.entries(state)
-    .filter(([_, on]) => on)
-    .map(([id, _]) => `${EVIDENCE[id].label} (${EVIDENCE[id].delta >= 0 ? '+' : ''}${(EVIDENCE[id].delta*100).toFixed(0)}%)`)
-    .join('; ') || 'none selected';
-
-  const prompt = `You are a Kalshi prediction market quant analyst. Return ONLY valid JSON, no markdown, no preamble.
+  const prompt = `You are a Kalshi prediction market quant analyst using Hanson's LMSR market maker model.
 
 IMPORTANT: output raw JSON only, no markdown, no code fences, no explanation
 
-MARKET: ${ticker}
+Market: ${ticker}
 Market price: ${priceCents}¢ (${(marketP*100).toFixed(1)}%)
-Base rate prior: ${(base*100).toFixed(0)}%
-Bayesian posterior: ${(posterior*100).toFixed(0)}%
-Final model probability: ${(finalModelP*100).toFixed(1)}%
-Active evidence: ${activeEvidence}
+Model probability: ${(modelP*100).toFixed(1)}%
+Edge: ${((modelP - marketP)*100).toFixed(2)}%
 User context: ${ctx || 'none'}
-Bankroll: ${bankroll ? '$' + bankroll : 'not specified'}
 Kelly fraction: ${kf}x
 Today: March 20 2026
 
-Compute EV and Kelly sizing. Return exactly this JSON:
+Validate the LMSR-scored edge and produce a trade memo.
+
+Return exactly this JSON:
 {
   "signal": "BUY" or "SELL" or "SKIP",
   "confidence": "HIGH" or "MEDIUM" or "LOW",
-  "verdict": "2-3 sentence explanation",
+  "verdict": "2-3 sentence validation of the edge",
   "trade_plan": "3-4 sentences on entry, confirmation, exit",
   "risks": ["risk 1", "risk 2", "risk 3"],
-  "bottom_line": "one sharp sentence"
+  "bottom_line": "one sharp actionable sentence"
 }`;
 
   try {
@@ -1026,7 +866,7 @@ Compute EV and Kelly sizing. Return exactly this JSON:
     const txt = (data.content || []).map(b => b.text || '').join('');
     const parsed = extractJSON(txt);
 
-    renderResults(parsed, marketP, finalModelP, base, bankroll, kf);
+    renderResults(parsed, marketP, modelP, base, bankroll, kf);
 
   } catch(e) {
     document.getElementById('loading').classList.remove('on');
@@ -1042,15 +882,12 @@ function renderResults(p, marketP, modelP, base, bankroll, kf) {
   const sig = p.signal || 'SKIP';
   const sigBadge = document.getElementById('sig-badge');
   sigBadge.textContent = sig;
-  sigBadge.className = 'sig-badge ' + (sig === 'BUY' ? 'sig-buy' : sig === 'SELL' ? 'sig-sell' : 'sig-skip');
+  sigBadge.className = 'sig-badge ' + (sig === 'BUY' ? 'sig-buy' : sig === 'SELL' ? 'sig-sell' : '');
 
   document.getElementById('verdict-text').textContent = p.verdict || '';
 
-  // EV calculation
+  // EV & Kelly
   const evVal = (modelP - marketP) / marketP;
-  const evSig = evVal > 0.05 ? 'BUY' : evVal < -0.05 ? 'SELL' : 'SKIP';
-
-  // Kelly calculation
   const b = (1 - marketP) / marketP;
   const q = 1 - modelP;
   const fullKelly = (modelP * b - q) / b;
@@ -1067,102 +904,27 @@ function renderResults(p, marketP, modelP, base, bankroll, kf) {
     </div>
     <div class="metric">
       <div class="metric-label">EV</div>
-      <div class="metric-value" style="color: ${evSig === 'BUY' ? 'var(--accent)' : evSig === 'SELL' ? 'var(--red)' : 'var(--text2)'}">
+      <div class="metric-value" style="color: ${evVal > 0 ? 'var(--accent)' : evVal < 0 ? 'var(--red)' : 'var(--text2)'}">
         ${(evVal*100).toFixed(1)}%
-      </div>
-    </div>
-    <div class="metric">
-      <div class="metric-label">Kelly</div>
-      <div class="metric-value">${(scaledKelly*100).toFixed(1)}%</div>
-    </div>
-    <div class="metric">
-      <div class="metric-label">Position</div>
-      <div class="metric-value">
-        ${bankroll && scaledKelly > 0 ? '$' + (bankroll * scaledKelly).toFixed(0) : '—'}
       </div>
     </div>
   `;
   document.getElementById('metrics-display').innerHTML = html;
 
   document.getElementById('trade-plan').textContent = p.trade_plan || '—';
-
   const risksHtml = (p.risks || []).map(r => `<div style="margin-bottom: 6px;">• ${r}</div>`).join('');
   document.getElementById('risks-plan').innerHTML = risksHtml || '—';
-
   document.getElementById('bottom-line').textContent = p.bottom_line || '—';
 
   document.getElementById('results').classList.add('on');
   document.getElementById('results').scrollIntoView({ behavior: 'smooth' });
 }
 
-// HISTORY TAB
-function initHistory() {
-  if (document.getElementById('movers-body').children.length === 0) {
-    loadMovers();
-    loadDbStatus();
-  }
-}
-
-async function loadDbStatus() {
-  try {
-    const r = await fetch(`${PROXY}/db/status`, { headers: { 'x-proxy-api-key': PKEY } });
-    if (r.ok) {
-      const d = await r.json();
-      document.getElementById('db-markets').textContent = d.markets_tracked || '—';
-      document.getElementById('db-snapshots').textContent = d.snapshots || '—';
-      document.getElementById('db-updated').textContent = d.last_update ? new Date(d.last_update).toLocaleString() : '—';
-    }
-  } catch(e) {}
-}
-
-async function loadMovers() {
-  try {
-    const r = await fetch(`${PROXY}/markets/movers?hours=1&min_move=0.03`, {
-      headers: { 'x-proxy-api-key': PKEY }
-    });
-    if (r.ok) {
-      const d = await r.json();
-      const html = (d.movers || []).map(m => `
-        <tr>
-          <td>${m.ticker}</td>
-          <td>$${parseFloat(m.price).toFixed(2)}</td>
-          <td>${(parseFloat(m.change)*100).toFixed(2)}%</td>
-          <td>${parseFloat(m.change) >= 0 ? '↑ Up' : '↓ Down'}</td>
-        </tr>
-      `).join('');
-      document.getElementById('movers-body').innerHTML = html || '<tr><td colspan="4" style="text-align:center;color:var(--text3)">No data</td></tr>';
-    }
-  } catch(e) {}
-}
-
-async function loadHistory() {
-  const ticker = document.getElementById('history-ticker').value.trim();
-  if (!ticker) return;
-
-  try {
-    const r = await fetch(`${PROXY}/market/${encodeURIComponent(ticker)}/history?hours=24`, {
-      headers: { 'x-proxy-api-key': PKEY }
-    });
-    if (r.ok) {
-      const d = await r.json();
-      const html = (d.history || []).map(h => `
-        <tr>
-          <td>${new Date(h.timestamp).toLocaleString()}</td>
-          <td>${(parseFloat(h.yes_price)*100).toFixed(1)}%</td>
-        </tr>
-      `).join('');
-      document.getElementById('history-body').innerHTML = html || '<tr><td colspan="2" style="text-align:center;color:var(--text3)">No data</td></tr>';
-    }
-  } catch(e) {}
-}
-
-// CHAT TAB
+// CHAT
 let messages = [];
 
 function initChat() {
-  if (document.getElementById('chat-messages').children.length === 0) {
-    renderChat();
-  }
+  if (document.getElementById('chat-messages').children.length === 0) renderChat();
 }
 
 function renderChat() {
@@ -1189,14 +951,12 @@ async function sendMessage() {
   const text = input.value.trim();
   if (!text) return;
 
-  // Add user message
   messages.push({ role: 'user', text });
   input.value = '';
   renderChat();
 
-  // Call bot
   try {
-    const prompt = `You are a Kalshi prediction market quant analyst. The user will ask you questions about markets, probabilities, strategies, and trade sizing. Answer concisely and accurately. Today: March 20 2026.
+    const prompt = `You are a Kalshi prediction market quant analyst specializing in LMSR market maker behavior and edge detection. The user will ask you questions about markets, probabilities, LMSR, strategies, and trade sizing. Answer concisely and accurately. Today: March 20 2026.
 
 User: ${text}`;
 
@@ -1219,10 +979,11 @@ User: ${text}`;
   }
 }
 
-// Initialize on load
+// Initialize
 window.addEventListener('load', () => {
-  renderEvidence();
-  updateProb();
+  runScan();
+  // Auto-refresh every 30 seconds
+  setInterval(runScan, 30000);
 });
 </script>
 
