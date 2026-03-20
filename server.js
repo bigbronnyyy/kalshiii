@@ -175,14 +175,18 @@ app.get("/markets/movers", requireProxyApiKey, (req, res) => {
 });
 
 app.get("/scan", requireProxyApiKey, (req, res) => {
-  const hours   = parseFloat(req.query.hours)     || 4;
-  const minEdge = parseFloat(req.query.min_edge)  || 0.02;
+  const hours    = parseFloat(req.query.hours)    || 4;
+  const minEdge  = parseFloat(req.query.min_edge) || 0.06;
+  const bankroll = parseFloat(req.query.bankroll) || null;
+  const k        = parseFloat(req.query.k)        || 0.25;
   try {
-    const opportunities = scanMarkets(db, hours, minEdge);
+    const opportunities = scanMarkets(db, hours, minEdge, bankroll, k);
     res.json({
       scan_time: new Date().toISOString(),
       hours,
       min_edge: minEdge,
+      bankroll,
+      k,
       count: opportunities.length,
       opportunities,
     });

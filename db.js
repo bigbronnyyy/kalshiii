@@ -328,11 +328,100 @@ function computeModelPrice(stats, market) {
   return Math.max(0.01, Math.min(0.99, modelPrice));
 }
 
+// ─── Reaction Model ───────────────────────────────────────────────────────────
+//
+// After a large trade (top 5% by size), measure price change at +5m, +15m, +60m.
+// delta_t = price_at_t+h - price_at_entry
+// Signal if |mean delta at +15m| > 0.02 (consistent direction).
+
+export function getPostTradeDeltas(db, ticker, hours = 24) {
+  const cutoff = new Date(Date.now() - hours * 3600 * 1000).toISOString();
+
+  const trades = db.prepare(`
+    SELECT price, size, trade_time
+    FROM trades
+    WHERE ticker = ? AND trade_time > ?
+    ORDER BY trade_time ASC
+  `).all(ticker, cutoff);
+
+  if (trades.length < 5) return null;
+
+  // 95th percentile size threshold
+  const sizes = trades.map(t => t.size).sort((a, b) => a - b);
+  const p95size = sizes[Math.floor(sizes.length * 0.95)];
+  if (p95size <= 0) return null;
+
+  const largeTrades = trades.filter(t => t.size >= p95size);
+  if (!largeTrades.length) return null;
+
+  // Fetch snapshots covering the window + 1h buffer for post-trade lookups
+  const extCutoff = new Date(Date.now() - (hours + 1) * 3600 * 1000).toISOString();
+  const snaps = db.prepare(`
+    SELECT yes_price, snapshot_time
+    FROM price_snapshots
+    WHERE ticker = ? AND snapshot_time > ? AND yes_price IS NOT NULL
+    ORDER BY snapshot_time ASC
+  `).all(ticker, extCutoff);
+
+  if (snaps.length < 3) return null;
+
+  // Pre-compute ms timestamps once
+  const snapMs = snaps.map(s => ({ price: s.yes_price, t: new Date(s.snapshot_time).getTime() }));
+
+  function nearestPrice(targetMs, toleranceMs = 180000) {
+    let best = null, bestDiff = Infinity;
+    for (const s of snapMs) {
+      const diff = Math.abs(s.t - targetMs);
+      if (diff < bestDiff) { bestDiff = diff; best = s; }
+    }
+    return bestDiff <= toleranceMs ? best : null;
+  }
+
+  const d5m = [], d15m = [], d60m = [];
+
+  for (const trade of largeTrades) {
+    const tradeMs = new Date(trade.trade_time).getTime();
+    const entry = nearestPrice(tradeMs);
+    if (!entry) continue;
+    const ep = entry.price;
+
+    const s5  = nearestPrice(tradeMs + 5  * 60000);
+    const s15 = nearestPrice(tradeMs + 15 * 60000);
+    const s60 = nearestPrice(tradeMs + 60 * 60000, 300000);
+
+    if (s5  && s5.t  !== entry.t) d5m.push(s5.price   - ep);
+    if (s15 && s15.t !== entry.t) d15m.push(s15.price  - ep);
+    if (s60 && s60.t !== entry.t) d60m.push(s60.price  - ep);
+  }
+
+  const mean = arr => arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null;
+
+  const m5  = mean(d5m);
+  const m15 = mean(d15m);
+  const m60 = mean(d60m);
+
+  return {
+    large_trade_count: largeTrades.length,
+    mean_delta_5m:  m5  !== null ? +m5.toFixed(4)  : null,
+    mean_delta_15m: m15 !== null ? +m15.toFixed(4) : null,
+    mean_delta_60m: m60 !== null ? +m60.toFixed(4) : null,
+    reaction_signal: m15 !== null && Math.abs(m15) > 0.02
+      ? (m15 > 0 ? 'CONTINUE' : 'REVERSE')
+      : null,
+  };
+}
+
 /**
  * Scan all active markets for LMSR edge.
- * Returns sorted array of opportunities with edge > minEdge.
+ *
+ * Three models combined:
+ *  1. Mispricing Model  — flag |p_model - p_market| > minEdge (default 0.06)
+ *  2. Sizing Model      — position_size = bankroll * k * |edge|  (k=0.25 default)
+ *  3. Reaction Model    — post-large-trade delta at +5m/+15m/+60m
+ *
+ * Returns sorted by absolute edge descending.
  */
-export function scanMarkets(db, hours = 4, minEdge = 0.02) {
+export function scanMarkets(db, hours = 4, minEdge = 0.06, bankroll = null, k = 0.25) {
   // Get all active markets with their latest snapshot
   const markets = db.prepare(`
     SELECT
@@ -369,13 +458,20 @@ export function scanMarkets(db, hours = 4, minEdge = 0.02) {
     // Score: edge magnitude per unit cost — higher = better opportunity
     const score = costToExploit > 0 ? absEdge / costToExploit : absEdge;
 
+    // Sizing Model: fraction = k * |edge|, position = bankroll * fraction
+    const fraction = k * absEdge;
+    const position_size = (bankroll && bankroll > 0) ? +(bankroll * fraction).toFixed(2) : null;
+
+    // Reaction Model: post-large-trade deltas
+    const reaction = getPostTradeDeltas(db, m.ticker, hours);
+
     results.push({
       ticker: m.ticker,
       title: m.title,
       market_price: +marketPrice.toFixed(4),
       model_price: +modelPrice.toFixed(4),
       edge: +edge.toFixed(4),
-      edge_pct: +((edge / marketPrice) * 100).toFixed(2),
+      edge_pct: +(edge * 100).toFixed(2),
       b_param: +b.toFixed(2),
       cost_to_exploit: +costToExploit.toFixed(4),
       score: +score.toFixed(4),
@@ -389,6 +485,15 @@ export function scanMarkets(db, hours = 4, minEdge = 0.02) {
       signal: edge > 0 ? "BUY" : "SELL",
       confidence: absEdge > 0.08 ? "HIGH" : absEdge > 0.04 ? "MEDIUM" : "LOW",
       updated: m.snapshot_time,
+      // Sizing model outputs
+      fraction: +fraction.toFixed(4),
+      position_size,
+      // Reaction model outputs
+      delta_5m:  reaction?.mean_delta_5m  ?? null,
+      delta_15m: reaction?.mean_delta_15m ?? null,
+      delta_60m: reaction?.mean_delta_60m ?? null,
+      reaction_signal:    reaction?.reaction_signal    ?? null,
+      large_trade_count:  reaction?.large_trade_count  ?? 0,
     });
   }
 
