@@ -4,721 +4,884 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Kalshi Quant Bot</title>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500&display=swap" rel="stylesheet">
 <style>
   :root {
-    --bg: #0a0a0b; --bg2: #111114; --bg3: #1a1a1f;
-    --border: rgba(255,255,255,0.08); --border2: rgba(255,255,255,0.14);
-    --text: #e8e8ec; --text2: #888894; --text3: #555560;
-    --green: #00d97e; --green-dim: rgba(0,217,126,0.1);
-    --red: #ff4d4d; --red-dim: rgba(255,77,77,0.1);
-    --amber: #f5a623; --amber-dim: rgba(245,166,35,0.1);
-    --blue: #4d9fff; --blue-dim: rgba(77,159,255,0.1);
-    --mono: 'IBM Plex Mono', monospace; --sans: 'IBM Plex Sans', sans-serif;
+    --bg: #0d0d0d;
+    --card: #161616;
+    --border: rgba(255,255,255,0.07);
+    --text: #e8e8ec;
+    --text-dim: #888894;
+    --green: #00c853;
+    --red: #ff4d4d;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: var(--bg); color: var(--text); font-family: var(--sans); min-height: 100vh; }
-  body::before {
-    content: ''; position: fixed; top:0;left:0;right:0;bottom:0;
-    background: repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,0.025) 2px,rgba(0,0,0,0.025) 4px);
-    pointer-events: none; z-index: 1000;
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: system-ui, -apple-system, sans-serif;
+    min-height: 100vh;
   }
-  .container { max-width: 900px; margin: 0 auto; padding: 2rem 1.5rem 4rem; }
+  .app { display: flex; flex-direction: column; height: 100vh; }
 
-  .header { display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:2rem; padding-bottom:1.5rem; border-bottom:1px solid var(--border); }
-  .logo h1 { font-family:var(--mono); font-size:22px; font-weight:600; color:var(--green); letter-spacing:-0.5px; }
-  .logo p { font-family:var(--mono); font-size:11px; color:var(--text3); margin-top:4px; letter-spacing:0.05em; }
-  .pipeline { display:flex; align-items:center; gap:6px; font-family:var(--mono); font-size:10px; }
-  .pipe-step { padding:3px 8px; border:1px solid var(--green); border-radius:3px; color:var(--green); }
-  .pipe-arrow { color:var(--text3); }
-
-  .panel { background:var(--bg2); border:1px solid var(--border); border-radius:8px; padding:1.5rem; margin-bottom:1rem; }
-  .panel-label { font-family:var(--mono); font-size:10px; font-weight:600; letter-spacing:0.12em; color:var(--text3); text-transform:uppercase; margin-bottom:1rem; }
-
-  .field-grid { display:grid; gap:12px; }
-  .field-grid.two { grid-template-columns:1fr 1fr; }
-  .field-grid.three { grid-template-columns:1fr 1fr 1fr; }
-  .field-grid.one { grid-template-columns:1fr; }
-
-  .field label { font-family:var(--mono); font-size:10px; color:var(--text3); letter-spacing:0.08em; text-transform:uppercase; display:block; margin-bottom:6px; }
-  .field input, .field select, .field textarea {
-    width:100%; background:var(--bg3); border:1px solid var(--border); border-radius:4px;
-    color:var(--text); font-family:var(--mono); font-size:13px; padding:8px 10px; outline:none;
-    transition:border-color 0.15s; resize:vertical;
+  /* Tab bar */
+  .tabs {
+    display: flex;
+    border-bottom: 1px solid var(--border);
+    background: var(--card);
+    padding: 0 1rem;
   }
-  .field input:focus, .field select:focus, .field textarea:focus { border-color:var(--green); }
-  .field input::placeholder, .field textarea::placeholder { color:var(--text3); }
-  .field select option { background:var(--bg3); color:var(--text); }
+  .tab-btn {
+    flex: 1;
+    padding: 1rem;
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    border-bottom: 3px solid transparent;
+    transition: all 0.2s;
+  }
+  .tab-btn.active {
+    color: var(--green);
+    border-bottom-color: var(--green);
+  }
 
-  .auto-row { display:flex; align-items:center; gap:6px; font-family:var(--mono); font-size:10px; color:var(--text3); margin-top:6px; }
-  .auto-dot { width:5px; height:5px; border-radius:50%; background:var(--text3); flex-shrink:0; }
-  .auto-dot.fetching { background:var(--amber); animation:blink 0.7s infinite; }
-  .auto-dot.ok { background:var(--green); }
-  .auto-dot.fail { background:var(--red); }
-  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.2} }
+  .content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1.5rem;
+    max-width: 1000px;
+    margin: 0 auto;
+    width: 100%;
+  }
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
 
-  .live-preview { display:none; background:var(--green-dim); border:1px solid rgba(0,217,126,0.2); border-radius:4px; padding:10px 14px; margin-top:8px; }
-  .live-preview.on { display:block; }
-  .lp-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; }
-  .lp-lbl { font-family:var(--mono); font-size:9px; color:var(--green); opacity:0.7; text-transform:uppercase; letter-spacing:0.08em; margin-bottom:3px; }
-  .lp-val { font-family:var(--mono); font-size:13px; font-weight:600; color:var(--green); }
+  /* Trade Deck */
+  .ticker-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 0.5rem;
+    margin-bottom: 1.5rem;
+  }
+  input[type="text"], input[type="number"], select, textarea {
+    background: var(--card);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 0.75rem;
+    border-radius: 6px;
+    font-family: monospace;
+    font-size: 13px;
+  }
+  input:focus, select:focus, textarea:focus {
+    outline: none;
+    border-color: var(--green);
+  }
 
-  /* Prob engine */
-  .prob-engine { background:var(--bg2); border:1px solid var(--border2); border-radius:8px; padding:1.5rem; margin-bottom:1rem; }
-  .prob-engine-title { font-family:var(--mono); font-size:10px; font-weight:600; letter-spacing:0.12em; color:var(--blue); text-transform:uppercase; margin-bottom:4px; }
-  .prob-engine-sub { font-family:var(--mono); font-size:10px; color:var(--text3); margin-bottom:1rem; }
+  .prob-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+  }
+  .prob-box {
+    background: var(--card);
+    border: 1px solid var(--border);
+    padding: 1rem;
+    border-radius: 6px;
+  }
+  .prob-label {
+    font-size: 11px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    margin-bottom: 0.5rem;
+  }
+  .prob-val {
+    font-size: 28px;
+    font-weight: 600;
+    color: var(--green);
+  }
 
-  .evidence-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:12px; }
-  .evidence-card { background:var(--bg3); border:1px solid var(--border); border-radius:6px; padding:10px 12px; }
-  .evidence-card-title { font-family:var(--mono); font-size:9px; color:var(--text3); text-transform:uppercase; letter-spacing:0.1em; margin-bottom:8px; }
-  .evidence-item { display:flex; align-items:center; gap:8px; padding:4px 0; cursor:pointer; }
-  .evidence-item:hover .ev-label { color:var(--text); }
-  .ev-btn { width:20px; height:20px; border-radius:3px; border:1px solid var(--border2); background:transparent; flex-shrink:0; display:flex; align-items:center; justify-content:center; cursor:pointer; font-size:11px; transition:all 0.1s; user-select:none; }
-  .ev-btn.bull { border-color:var(--green); background:var(--green-dim); color:var(--green); }
-  .ev-btn.bear { border-color:var(--red); background:var(--red-dim); color:var(--red); }
-  .ev-btn.neut { color:var(--text3); }
-  .ev-label { font-family:var(--sans); font-size:12px; color:var(--text2); flex:1; }
-  .ev-weight { font-family:var(--mono); font-size:10px; color:var(--text3); }
+  .accordion-btn {
+    width: 100%;
+    padding: 1rem;
+    background: var(--card);
+    border: 1px solid var(--border);
+    color: var(--text);
+    cursor: pointer;
+    border-radius: 6px;
+    text-align: left;
+    font-size: 14px;
+    font-weight: 500;
+    margin-bottom: 1rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .accordion-btn:hover { border-color: var(--green); }
 
-  .prob-display { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-bottom:10px; }
-  .prob-box { background:var(--bg3); border:1px solid var(--border); border-radius:6px; padding:10px 14px; }
-  .prob-box-lbl { font-family:var(--mono); font-size:9px; color:var(--text3); text-transform:uppercase; letter-spacing:0.1em; margin-bottom:6px; }
-  .prob-box-val { font-family:var(--mono); font-size:24px; font-weight:600; }
-  .prob-box-val.amber { color:var(--amber); }
-  .prob-box-val.blue { color:var(--blue); }
-  .prob-box-val.green { color:var(--green); }
-  .prob-box-sub { font-family:var(--mono); font-size:10px; color:var(--text3); margin-top:3px; }
+  .accordion-content {
+    display: none;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-top: none;
+    border-radius: 0 0 6px 6px;
+    padding: 1rem;
+    margin-bottom: 1rem;
+  }
+  .accordion-content.open { display: block; }
 
-  .bayes-chain { display:flex; align-items:center; gap:4px; flex-wrap:wrap; margin-bottom:12px; padding:8px 10px; background:var(--bg3); border-radius:4px; border:1px solid var(--border); }
-  .bc-step { font-family:var(--mono); font-size:11px; padding:2px 7px; border-radius:3px; border:1px solid var(--border); color:var(--text3); }
-  .bc-step.start { color:var(--text2); border-color:var(--border2); }
-  .bc-step.bull { border-color:rgba(0,217,126,0.4); color:var(--green); background:var(--green-dim); }
-  .bc-step.bear { border-color:rgba(255,77,77,0.4); color:var(--red); background:var(--red-dim); }
-  .bc-step.final { border-color:var(--amber); color:var(--amber); background:var(--amber-dim); font-weight:600; }
-  .bc-arrow { color:var(--text3); font-size:10px; }
+  .evidence-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+  }
+  .evidence-section {
+    background: rgba(255,255,255,0.02);
+    padding: 1rem;
+    border-radius: 6px;
+  }
+  .evidence-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    margin-bottom: 0.75rem;
+    letter-spacing: 0.05em;
+  }
+  .evidence-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.5rem 0;
+    cursor: pointer;
+  }
+  .evidence-item:hover { color: var(--green); }
+  .ev-btn {
+    width: 24px;
+    height: 24px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-dim);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-weight: bold;
+    flex-shrink: 0;
+  }
+  .ev-btn.bull { border-color: var(--green); background: rgba(0,200,83,0.1); color: var(--green); }
+  .ev-btn.bear { border-color: var(--red); background: rgba(255,77,77,0.1); color: var(--red); }
+  .ev-label { flex: 1; font-size: 13px; }
 
-  .btn-row { display:flex; gap:8px; margin-top:1rem; }
-  .btn-browse { padding:8px 14px; background:var(--bg3); border:1px solid var(--border2); border-radius:4px; color:var(--text2); font-family:var(--mono); font-size:11px; cursor:pointer; white-space:nowrap; }
-  .btn-browse:hover { border-color:var(--green); color:var(--green); }
-  .btn-est { flex:1; padding:10px; background:var(--blue-dim); border:1px solid var(--blue); border-radius:4px; color:var(--blue); font-family:var(--mono); font-size:12px; font-weight:600; cursor:pointer; letter-spacing:0.06em; text-transform:uppercase; }
-  .btn-est:hover { background:rgba(77,159,255,0.18); }
-  .btn-run { flex:2; padding:12px; background:var(--green-dim); border:1px solid var(--green); border-radius:4px; color:var(--green); font-family:var(--mono); font-size:13px; font-weight:600; cursor:pointer; letter-spacing:0.08em; text-transform:uppercase; }
-  .btn-run:hover { background:rgba(0,217,126,0.18); }
-  .btn-run:disabled { opacity:0.35; cursor:not-allowed; }
+  .size-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+  }
 
-  .status-msg { font-family:var(--mono); font-size:12px; color:var(--text3); margin-top:8px; min-height:18px; }
-  .status-msg.error { color:var(--red); }
+  .context-area {
+    margin-bottom: 1.5rem;
+  }
+  .context-area textarea {
+    width: 100%;
+    min-height: 80px;
+    resize: none;
+  }
 
-  .market-list { margin-top:10px; display:none; max-height:200px; overflow-y:auto; }
-  .market-list.on { display:block; }
-  .market-item { padding:8px 10px; border:1px solid var(--border); border-radius:4px; margin-bottom:4px; cursor:pointer; display:grid; grid-template-columns:1fr auto; align-items:center; gap:8px; }
-  .market-item:hover { border-color:var(--green); }
-  .mi-title { font-family:var(--mono); font-size:11px; color:var(--text2); }
-  .mi-ticker { font-family:var(--mono); font-size:10px; color:var(--text3); }
-  .mi-price { font-family:var(--mono); font-size:12px; font-weight:600; color:var(--amber); }
+  .btn-analyze {
+    width: 100%;
+    padding: 1rem;
+    background: var(--green);
+    border: none;
+    color: #000;
+    border-radius: 6px;
+    font-weight: 600;
+    font-size: 14px;
+    cursor: pointer;
+    margin-bottom: 1.5rem;
+    transition: all 0.2s;
+  }
+  .btn-analyze:hover { opacity: 0.9; }
+  .btn-analyze:disabled { opacity: 0.5; cursor: not-allowed; }
 
-  .loading { display:none; text-align:center; padding:3rem; }
-  .loading.on { display:block; }
-  .loading-bar { width:200px; height:2px; background:var(--border); border-radius:1px; overflow:hidden; margin:0 auto 12px; }
-  .loading-fill { height:100%; background:var(--green); animation:sweep 1.8s ease-in-out infinite; }
-  @keyframes sweep { 0%{width:0;margin-left:0} 50%{width:100%;margin-left:0} 51%{margin-left:0} 100%{width:0;margin-left:100%} }
-  .loading-txt { font-family:var(--mono); font-size:12px; color:var(--text3); }
+  .loading-bar {
+    display: none;
+    width: 100%;
+    height: 3px;
+    background: rgba(255,255,255,0.1);
+    border-radius: 2px;
+    overflow: hidden;
+    margin-bottom: 1.5rem;
+  }
+  .loading-bar.on {
+    display: block;
+  }
+  .loading-fill {
+    height: 100%;
+    background: var(--green);
+    animation: sweep 1.5s ease-in-out infinite;
+  }
+  @keyframes sweep {
+    0% { width: 0; margin-left: 0; }
+    50% { width: 100%; }
+    100% { width: 0; margin-left: 100%; }
+  }
 
-  .results { display:none; }
-  .results.on { display:block; }
+  .results {
+    display: none;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 1.5rem;
+  }
+  .results.on { display: block; }
 
-  .verdict { background:var(--bg2); border:1px solid var(--border); border-radius:8px; padding:1.5rem; margin-bottom:1rem; }
-  .verdict-top { display:flex; align-items:center; gap:10px; margin-bottom:12px; flex-wrap:wrap; }
-  .sig-badge { font-family:var(--mono); font-size:15px; font-weight:600; padding:5px 18px; border-radius:3px; letter-spacing:0.1em; }
-  .sig-buy { background:var(--green-dim); color:var(--green); border:1px solid rgba(0,217,126,0.3); }
-  .sig-sell { background:var(--red-dim); color:var(--red); border:1px solid rgba(255,77,77,0.3); }
-  .sig-skip { background:rgba(255,255,255,0.04); color:var(--text2); border:1px solid var(--border); }
-  .conf-badge { font-family:var(--mono); font-size:10px; padding:4px 10px; border-radius:3px; background:rgba(255,255,255,0.04); color:var(--text3); border:1px solid var(--border); letter-spacing:0.06em; }
-  .live-tag { display:none; font-family:var(--mono); font-size:10px; padding:4px 8px; border-radius:3px; background:var(--green-dim); color:var(--green); border:1px solid rgba(0,217,126,0.2); }
-  .live-tag.on { display:inline-block; }
-  .verdict-text { font-size:14px; color:var(--text); line-height:1.7; }
+  .sig-badge {
+    display: inline-block;
+    padding: 0.5rem 1rem;
+    border-radius: 4px;
+    font-weight: 600;
+    margin-bottom: 1rem;
+    font-size: 14px;
+  }
+  .sig-badge.buy { background: rgba(0,200,83,0.15); color: var(--green); }
+  .sig-badge.sell { background: rgba(255,77,77,0.15); color: var(--red); }
+  .sig-badge.skip { background: rgba(255,255,255,0.05); color: var(--text-dim); }
 
-  .metrics { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:8px; margin-bottom:1rem; }
-  .metric { background:var(--bg2); border:1px solid var(--border); border-radius:6px; padding:12px 14px; }
-  .metric-lbl { font-family:var(--mono); font-size:9px; color:var(--text3); letter-spacing:0.1em; text-transform:uppercase; margin-bottom:6px; }
-  .metric-val { font-family:var(--mono); font-size:18px; font-weight:600; color:var(--text); line-height:1; }
-  .metric-sub { font-family:var(--mono); font-size:10px; color:var(--text3); margin-top:4px; }
-  .metric-val.green{color:var(--green)} .metric-val.red{color:var(--red)} .metric-val.amber{color:var(--amber)} .metric-val.blue{color:var(--blue)}
+  .metrics {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+  }
+  .metric {
+    background: rgba(255,255,255,0.02);
+    padding: 1rem;
+    border-radius: 6px;
+    text-align: center;
+  }
+  .metric-label {
+    font-size: 11px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    margin-bottom: 0.5rem;
+  }
+  .metric-val {
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--green);
+  }
 
-  .detail-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:1rem; }
-  .detail-card { background:var(--bg2); border:1px solid var(--border); border-radius:6px; padding:1rem 1.25rem; }
-  .detail-title { font-family:var(--mono); font-size:9px; font-weight:600; color:var(--text3); letter-spacing:0.12em; text-transform:uppercase; margin-bottom:10px; padding-bottom:8px; border-bottom:1px solid var(--border); }
-  .detail-row { display:flex; justify-content:space-between; padding:4px 0; border-bottom:1px solid var(--border); }
-  .detail-row:last-of-type { border-bottom:none; }
-  .dl { color:var(--text3); font-family:var(--mono); font-size:11px; }
-  .dv { font-family:var(--mono); font-weight:500; color:var(--text); font-size:11px; }
-  .detail-text { font-size:12px; color:var(--text2); line-height:1.65; margin-top:8px; }
-  .risk-item { display:flex; gap:8px; padding:3px 0; font-size:12px; color:var(--text2); line-height:1.5; }
-  .rpip { width:4px; height:4px; border-radius:50%; background:var(--text3); margin-top:6px; flex-shrink:0; }
-  .rpip.crit { background:var(--red); }
+  .verdict {
+    background: rgba(255,255,255,0.02);
+    padding: 1rem;
+    border-radius: 6px;
+    line-height: 1.6;
+    margin-bottom: 1rem;
+    font-size: 14px;
+  }
 
-  .bottom-line { background:var(--bg3); border:1px solid var(--border2); border-left:3px solid var(--amber); border-radius:0 4px 4px 0; padding:12px 16px; font-family:var(--mono); font-size:13px; font-weight:500; color:var(--amber); line-height:1.5; }
+  .detail-text {
+    background: rgba(255,255,255,0.02);
+    padding: 1rem;
+    border-radius: 6px;
+    font-size: 13px;
+    line-height: 1.6;
+    margin-bottom: 1rem;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+  }
 
-  @media(max-width:640px){
-    .field-grid.two,.field-grid.three{grid-template-columns:1fr}
-    .metrics{grid-template-columns:1fr 1fr}
-    .detail-grid{grid-template-columns:1fr}
-    .evidence-grid{grid-template-columns:1fr}
-    .lp-grid{grid-template-columns:1fr 1fr}
-    .prob-display{grid-template-columns:1fr 1fr}
-    .pipeline{display:none}
+  /* History Tab */
+  .status-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 1rem;
+    margin-bottom: 2rem;
+  }
+  .status-box {
+    background: var(--card);
+    border: 1px solid var(--border);
+    padding: 1rem;
+    border-radius: 6px;
+  }
+  .status-label {
+    font-size: 11px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    margin-bottom: 0.5rem;
+  }
+  .status-val {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text);
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 2rem;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  th {
+    background: rgba(0,200,83,0.1);
+    padding: 0.75rem;
+    text-align: left;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--green);
+    border-bottom: 1px solid var(--border);
+  }
+  td {
+    padding: 0.75rem;
+    border-bottom: 1px solid var(--border);
+    font-size: 13px;
+  }
+  tr:last-child td { border-bottom: none; }
+  tr:hover { background: rgba(0,200,83,0.05); }
+
+  .table-controls {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 0.5rem;
+    margin-bottom: 1.5rem;
+    align-items: end;
+  }
+
+  /* Chat Tab */
+  .chat-container {
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - 200px);
+  }
+  .messages {
+    flex: 1;
+    overflow-y: auto;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 1rem;
+    margin-bottom: 1rem;
+  }
+  .message {
+    display: flex;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+  }
+  .message.user { justify-content: flex-end; }
+  .message.bot { justify-content: flex-start; }
+  .msg-bubble {
+    max-width: 70%;
+    padding: 0.75rem 1rem;
+    border-radius: 6px;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  .msg-bubble.user { background: var(--green); color: #000; }
+  .msg-bubble.bot { background: rgba(255,255,255,0.05); border: 1px solid var(--border); }
+
+  .chat-input-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 0.5rem;
+  }
+  .chat-input-row input { width: 100%; }
+  .btn-send {
+    padding: 0.75rem 1.5rem;
+    background: var(--green);
+    border: none;
+    color: #000;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 600;
+    transition: all 0.2s;
+  }
+  .btn-send:hover { opacity: 0.9; }
+
+  .error-msg {
+    color: var(--red);
+    font-size: 12px;
+    padding: 0.5rem;
+    background: rgba(255,77,77,0.1);
+    border: 1px solid var(--red);
+    border-radius: 4px;
+    margin-bottom: 1rem;
+  }
+
+  @media (max-width: 768px) {
+    .prob-row, .metrics { grid-template-columns: 1fr; }
+    .evidence-grid { grid-template-columns: 1fr; }
+    .status-row { grid-template-columns: 1fr; }
+    .msg-bubble { max-width: 90%; }
+    .size-row { grid-template-columns: 1fr; }
   }
 </style>
 </head>
 <body>
-<div class="container">
 
-  <div class="header">
-    <div class="logo">
-      <h1>KALSHI QUANT BOT</h1>
-      <p>BASE RATES · BAYES · EV · KELLY · SIGNAL</p>
-    </div>
-    <div class="pipeline">
-      <span class="pipe-step">KALSHI</span><span class="pipe-arrow">→</span>
-      <span class="pipe-step">BACKEND</span><span class="pipe-arrow">→</span>
-      <span class="pipe-step">BOT</span><span class="pipe-arrow">→</span>
-      <span class="pipe-step">YOU</span>
-    </div>
+<div class="app">
+  <div class="tabs">
+    <button class="tab-btn active" onclick="switchTab('deck')">Trade Deck</button>
+    <button class="tab-btn" onclick="switchTab('history')">History</button>
+    <button class="tab-btn" onclick="switchTab('chat')">Chat</button>
   </div>
 
-  <!-- STEP 1: Find market -->
-  <div class="panel">
-    <div class="panel-label">Step 1 — Find a market</div>
-    <div style="display:grid;grid-template-columns:1fr auto;gap:8px;align-items:end;margin-bottom:8px">
-      <div class="field">
-        <label>Browse by series (e.g. KXBTCD, KXGASP, KXETHD)</label>
-        <input type="text" id="series-input" placeholder="e.g. KXGASP" onkeydown="if(event.key==='Enter')browseMarkets()" />
+  <div class="content">
+
+    <!-- TAB 1: TRADE DECK -->
+    <div id="deck" class="tab-content active">
+      <div class="ticker-row">
+        <input type="text" id="ticker-input" placeholder="e.g. KXBTCD-26MAR1900-T74999.99" />
+        <button style="padding: 0.75rem 1.5rem; background: var(--card); border: 1px solid var(--border); color: var(--green); cursor: pointer; border-radius: 6px;" onclick="fetchTickerData()">FETCH</button>
       </div>
-      <button class="btn-browse" onclick="browseMarkets()">FETCH →</button>
+
+      <div class="prob-row">
+        <div class="prob-box">
+          <div class="prob-label">Prior %</div>
+          <div class="prob-val" id="prior-val">50%</div>
+        </div>
+        <div class="prob-box">
+          <div class="prob-label">Posterior %</div>
+          <div class="prob-val" id="posterior-val">50%</div>
+        </div>
+        <div class="prob-box">
+          <div class="prob-label">Model %</div>
+          <div class="prob-val" id="model-val">50%</div>
+        </div>
+      </div>
+
+      <button class="accordion-btn" onclick="toggleAccordion()">
+        <span>Evidence (16 factors)</span>
+        <span id="acc-arrow">▶</span>
+      </button>
+      <div id="accordion" class="accordion-content">
+        <div class="evidence-grid">
+          <div class="evidence-section">
+            <div class="evidence-title">Price / Momentum</div>
+            <div class="evidence-item" onclick="toggleEvidence('m1')"><div class="ev-btn neut" id="m1">–</div><span class="ev-label">Price toward strike</span></div>
+            <div class="evidence-item" onclick="toggleEvidence('m2')"><div class="ev-btn neut" id="m2">–</div><span class="ev-label">Price away from strike</span></div>
+            <div class="evidence-item" onclick="toggleEvidence('m3')"><div class="ev-btn neut" id="m3">–</div><span class="ev-label">Within 1% of strike</span></div>
+            <div class="evidence-item" onclick="toggleEvidence('m4')"><div class="ev-btn neut" id="m4">–</div><span class="ev-label">Strong volume</span></div>
+          </div>
+          <div class="evidence-section">
+            <div class="evidence-title">Macro / Catalyst</div>
+            <div class="evidence-item" onclick="toggleEvidence('mac1')"><div class="ev-btn neut" id="mac1">–</div><span class="ev-label">Bullish catalyst</span></div>
+            <div class="evidence-item" onclick="toggleEvidence('mac2')"><div class="ev-btn neut" id="mac2">–</div><span class="ev-label">Bearish catalyst</span></div>
+            <div class="evidence-item" onclick="toggleEvidence('mac3')"><div class="ev-btn neut" id="mac3">–</div><span class="ev-label">Supply shock</span></div>
+            <div class="evidence-item" onclick="toggleEvidence('mac4')"><div class="ev-btn neut" id="mac4">–</div><span class="ev-label">Policy dampening</span></div>
+          </div>
+          <div class="evidence-section">
+            <div class="evidence-title">Market Structure</div>
+            <div class="evidence-item" onclick="toggleEvidence('s1')"><div class="ev-btn neut" id="s1">–</div><span class="ev-label">Psychological level</span></div>
+            <div class="evidence-item" onclick="toggleEvidence('s2')"><div class="ev-btn neut" id="s2">–</div><span class="ev-label">Broke above strike</span></div>
+            <div class="evidence-item" onclick="toggleEvidence('s3')"><div class="ev-btn neut" id="s3">–</div><span class="ev-label">Rejected at strike</span></div>
+            <div class="evidence-item" onclick="toggleEvidence('s4')"><div class="ev-btn neut" id="s4">–</div><span class="ev-label">Support below price</span></div>
+          </div>
+          <div class="evidence-section">
+            <div class="evidence-title">Sentiment / Timing</div>
+            <div class="evidence-item" onclick="toggleEvidence('sen1')"><div class="ev-btn neut" id="sen1">–</div><span class="ev-label">Extreme fear</span></div>
+            <div class="evidence-item" onclick="toggleEvidence('sen2')"><div class="ev-btn neut" id="sen2">–</div><span class="ev-label">Greed/neutral</span></div>
+            <div class="evidence-item" onclick="toggleEvidence('sen3')"><div class="ev-btn neut" id="sen3">–</div><span class="ev-label">Res >24h</span></div>
+            <div class="evidence-item" onclick="toggleEvidence('sen4')"><div class="ev-btn neut" id="sen4">–</div><span class="ev-label">Res <6h</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="size-row">
+        <div>
+          <label style="display: block; font-size: 11px; color: var(--text-dim); margin-bottom: 0.5rem; text-transform: uppercase;">Bankroll ($)</label>
+          <input type="number" id="bankroll" placeholder="optional" />
+        </div>
+        <div>
+          <label style="display: block; font-size: 11px; color: var(--text-dim); margin-bottom: 0.5rem; text-transform: uppercase;">Kelly Fraction</label>
+          <select id="kelly-frac">
+            <option value="0.25">0.25x — conservative</option>
+            <option value="0.5">0.5x — moderate</option>
+            <option value="1.0">1.0x — full Kelly</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="context-area">
+        <label style="display: block; font-size: 11px; color: var(--text-dim); margin-bottom: 0.5rem; text-transform: uppercase;">Context (optional)</label>
+        <textarea id="context" placeholder="Describe what you see (price, news, sentiment, etc.)"></textarea>
+      </div>
+
+      <div class="loading-bar" id="loading-bar"><div class="loading-fill"></div></div>
+      <button class="btn-analyze" id="btn-analyze" onclick="runAnalysis()">RUN ANALYSIS</button>
+      <div id="error-msg"></div>
+
+      <div class="results" id="results">
+        <div style="margin-bottom: 1.5rem;">
+          <span class="sig-badge" id="sig-badge">SKIP</span>
+        </div>
+        <div class="metrics">
+          <div class="metric">
+            <div class="metric-label">EV</div>
+            <div class="metric-val" id="metric-ev">—</div>
+          </div>
+          <div class="metric">
+            <div class="metric-label">Kelly</div>
+            <div class="metric-val" id="metric-kelly">—</div>
+          </div>
+          <div class="metric">
+            <div class="metric-label">Position</div>
+            <div class="metric-val" id="metric-pos">—</div>
+          </div>
+        </div>
+        <div class="verdict" id="verdict"></div>
+        <div class="detail-text" id="trade-plan-text"></div>
+        <div class="detail-text" id="risks-text"></div>
+        <div class="detail-text" id="bottom-line-text"></div>
+      </div>
     </div>
-    <div class="market-list" id="market-list"></div>
-    <div style="margin-top:12px">
-      <div class="field">
-        <label>Or paste ticker directly</label>
-        <input type="text" id="market-q" placeholder="e.g. KXBTCD-26MAR1900-T74999.99" oninput="onTickerInput()" />
+
+    <!-- TAB 2: HISTORY -->
+    <div id="history" class="tab-content">
+      <h2 style="margin-bottom: 1.5rem; font-size: 18px;">Market Data & History</h2>
+
+      <div class="status-row">
+        <div class="status-box">
+          <div class="status-label">Markets Tracked</div>
+          <div class="status-val" id="db-markets">—</div>
+        </div>
+        <div class="status-box">
+          <div class="status-label">Snapshots Stored</div>
+          <div class="status-val" id="db-snapshots">—</div>
+        </div>
+        <div class="status-box">
+          <div class="status-label">Last Update</div>
+          <div class="status-val" id="db-last" style="font-size: 12px;">—</div>
+        </div>
       </div>
-      <div class="auto-row">
-        <div class="auto-dot" id="auto-dot"></div>
-        <span id="auto-txt">enter ticker to auto-fetch live price</span>
+
+      <h3 style="margin-bottom: 1rem; font-size: 16px;">Top Movers (1h)</h3>
+      <table id="movers-table">
+        <thead><tr><th>Ticker</th><th>Title</th><th>Change</th><th>Direction</th></tr></thead>
+        <tbody id="movers-body"><tr><td colspan="4" style="text-align: center; color: var(--text-dim);">Loading...</td></tr></tbody>
+      </table>
+
+      <h3 style="margin-bottom: 1rem; font-size: 16px;">Price History (24h)</h3>
+      <div class="table-controls">
+        <input type="text" id="history-ticker" placeholder="Enter ticker..." />
+        <button style="padding: 0.75rem 1.5rem; background: var(--card); border: 1px solid var(--border); color: var(--green); cursor: pointer; border-radius: 6px;" onclick="loadPriceHistory()">LOAD</button>
       </div>
-      <div class="live-preview" id="live-preview">
-        <div class="lp-grid">
-          <div><div class="lp-lbl">Last price</div><div class="lp-val" id="lp-price">—</div></div>
-          <div><div class="lp-lbl">Yes ask</div><div class="lp-val" id="lp-ask">—</div></div>
-          <div><div class="lp-lbl">Yes bid</div><div class="lp-val" id="lp-bid">—</div></div>
-          <div><div class="lp-lbl">Strike</div><div class="lp-val" id="lp-strike">—</div></div>
+      <table id="history-table">
+        <thead><tr><th>Time</th><th>Price</th><th>Bid</th><th>Ask</th><th>Source</th></tr></thead>
+        <tbody id="history-body"><tr><td colspan="5" style="text-align: center; color: var(--text-dim); padding: 2rem;">Enter a ticker and click LOAD</td></tr></tbody>
+      </table>
+    </div>
+
+    <!-- TAB 3: CHAT -->
+    <div id="chat" class="tab-content">
+      <div class="chat-container">
+        <div class="messages" id="messages"></div>
+        <div class="chat-input-row">
+          <input type="text" id="chat-input" placeholder="Ask me about markets, probabilities, sizing..." onkeydown="if(event.key==='Enter')sendMessage()" />
+          <button class="btn-send" onclick="sendMessage()">SEND</button>
         </div>
       </div>
     </div>
+
   </div>
-
-  <!-- STEP 2: Probability engine -->
-  <div class="prob-engine">
-    <div class="prob-engine-title">Step 2 — Probability estimation engine</div>
-    <div class="prob-engine-sub">Check every signal that applies → bot computes your model probability via base rates + Bayes</div>
-
-    <div class="field" style="margin-bottom:12px">
-      <label>Market context — describe what you see (price vs strike, news, chart, sentiment)</label>
-      <textarea id="context" rows="2" placeholder="e.g. National gas avg $3.79/gal, up 30% in one month. Iran war drove crude to $100. SPR release announced. Spring break demand spike. FOMC March 19."></textarea>
-    </div>
-
-    <div class="evidence-grid">
-      <div class="evidence-card">
-        <div class="evidence-card-title">Price / momentum</div>
-        <div class="evidence-item" onclick="toggle('mom1')"><div class="ev-btn neut" id="mom1">–</div><span class="ev-label">Price trending toward strike</span><span class="ev-weight">+8%</span></div>
-        <div class="evidence-item" onclick="toggle('mom2')"><div class="ev-btn neut" id="mom2">–</div><span class="ev-label">Price trending away from strike</span><span class="ev-weight">−8%</span></div>
-        <div class="evidence-item" onclick="toggle('mom3')"><div class="ev-btn neut" id="mom3">–</div><span class="ev-label">Price within 1% of strike right now</span><span class="ev-weight">0%</span></div>
-        <div class="evidence-item" onclick="toggle('mom4')"><div class="ev-btn neut" id="mom4">–</div><span class="ev-label">Strong volume supporting direction</span><span class="ev-weight">+5%</span></div>
-      </div>
-      <div class="evidence-card">
-        <div class="evidence-card-title">Macro / catalyst</div>
-        <div class="evidence-item" onclick="toggle('mac1')"><div class="ev-btn neut" id="mac1">–</div><span class="ev-label">Bullish macro catalyst this week</span><span class="ev-weight">+7%</span></div>
-        <div class="evidence-item" onclick="toggle('mac2')"><div class="ev-btn neut" id="mac2">–</div><span class="ev-label">Bearish macro catalyst (FOMC, war, etc.)</span><span class="ev-weight">−7%</span></div>
-        <div class="evidence-item" onclick="toggle('mac3')"><div class="ev-btn neut" id="mac3">–</div><span class="ev-label">Major supply shock or disruption</span><span class="ev-weight">+9%</span></div>
-        <div class="evidence-item" onclick="toggle('mac4')"><div class="ev-btn neut" id="mac4">–</div><span class="ev-label">Policy response dampening move</span><span class="ev-weight">−5%</span></div>
-      </div>
-      <div class="evidence-card">
-        <div class="evidence-card-title">Market structure</div>
-        <div class="evidence-item" onclick="toggle('str1')"><div class="ev-btn neut" id="str1">–</div><span class="ev-label">Strike is major psychological level</span><span class="ev-weight">−4%</span></div>
-        <div class="evidence-item" onclick="toggle('str2')"><div class="ev-btn neut" id="str2">–</div><span class="ev-label">Price recently broke above strike</span><span class="ev-weight">+6%</span></div>
-        <div class="evidence-item" onclick="toggle('str3')"><div class="ev-btn neut" id="str3">–</div><span class="ev-label">Price rejected at strike recently</span><span class="ev-weight">−6%</span></div>
-        <div class="evidence-item" onclick="toggle('str4')"><div class="ev-btn neut" id="str4">–</div><span class="ev-label">Strong support / floor below price</span><span class="ev-weight">+4%</span></div>
-      </div>
-      <div class="evidence-card">
-        <div class="evidence-card-title">Sentiment / timing</div>
-        <div class="evidence-item" onclick="toggle('sen1')"><div class="ev-btn neut" id="sen1">–</div><span class="ev-label">Extreme fear / panic in market</span><span class="ev-weight">−5%</span></div>
-        <div class="evidence-item" onclick="toggle('sen2')"><div class="ev-btn neut" id="sen2">–</div><span class="ev-label">Greed or neutral sentiment</span><span class="ev-weight">+4%</span></div>
-        <div class="evidence-item" onclick="toggle('sen3')"><div class="ev-btn neut" id="sen3">–</div><span class="ev-label">Resolution &gt;24h (time for mean revert)</span><span class="ev-weight">−2%</span></div>
-        <div class="evidence-item" onclick="toggle('sen4')"><div class="ev-btn neut" id="sen4">–</div><span class="ev-label">Resolution &lt;6h (price likely sticky)</span><span class="ev-weight">+3%</span></div>
-      </div>
-    </div>
-
-    <!-- Probability display -->
-    <div class="prob-display">
-      <div class="prob-box">
-        <div class="prob-box-lbl">Base rate prior</div>
-        <div class="prob-box-val amber" id="prior-display">50%</div>
-        <div class="prob-box-sub">historical base</div>
-      </div>
-      <div class="prob-box">
-        <div class="prob-box-lbl">Bayesian posterior</div>
-        <div class="prob-box-val blue" id="posterior-display">50%</div>
-        <div class="prob-box-sub">after evidence</div>
-      </div>
-      <div class="prob-box">
-        <div class="prob-box-lbl">Model probability</div>
-        <div class="prob-box-val green" id="model-display">50%</div>
-        <div class="prob-box-sub">used for EV + Kelly</div>
-      </div>
-    </div>
-
-    <!-- Bayes chain -->
-    <div class="bayes-chain" id="bayes-chain">
-      <span class="bc-step start">Prior: 50%</span>
-      <span class="bc-arrow">→</span>
-      <span class="bc-step final">Model: 50%</span>
-    </div>
-
-    <div class="field">
-      <label>Manual override — your probability % (optional, overrides engine)</label>
-      <input type="number" id="model-p-override" placeholder="leave blank to use engine" min="1" max="99" oninput="updateProb()" />
-    </div>
-  </div>
-
-  <!-- STEP 3: Trade config -->
-  <div class="panel">
-    <div class="panel-label">Step 3 — Size the trade</div>
-    <div class="field-grid three" style="margin-bottom:12px">
-      <div class="field">
-        <label>Market price (¢)</label>
-        <input type="number" id="market-price" placeholder="auto-filled" min="1" max="99" />
-      </div>
-      <div class="field">
-        <label>Bankroll ($) optional</label>
-        <input type="number" id="bankroll" placeholder="e.g. 500" />
-      </div>
-      <div class="field">
-        <label>Kelly fraction</label>
-        <select id="kelly-frac">
-          <option value="0.25">0.25x — conservative</option>
-          <option value="0.5">0.5x — moderate</option>
-          <option value="1.0">1.0x — full Kelly</option>
-        </select>
-      </div>
-    </div>
-    <div class="field-grid one">
-      <div class="field">
-        <label>Resolution date / time</label>
-        <input type="text" id="res-date" placeholder="auto-filled or type e.g. Mar 31 midnight ET" />
-      </div>
-    </div>
-    <div class="btn-row">
-      <button class="btn-est" onclick="updateProb()">⟳ RECALCULATE</button>
-      <button class="btn-run" onclick="runAnalysis()" id="run-btn">▶ RUN FULL QUANT ANALYSIS</button>
-    </div>
-    <div class="status-msg" id="status-msg"></div>
-  </div>
-
-  <div class="loading" id="loading">
-    <div class="loading-bar"><div class="loading-fill"></div></div>
-    <div class="loading-txt" id="loading-txt">COMPUTING...</div>
-  </div>
-
-  <div class="results" id="results">
-    <div class="verdict">
-      <div class="verdict-top">
-        <span class="sig-badge" id="sig-badge">—</span>
-        <span class="conf-badge" id="conf-badge">—</span>
-        <span class="live-tag" id="live-tag">● LIVE KALSHI</span>
-      </div>
-      <div class="verdict-text" id="verdict-text"></div>
-    </div>
-    <div class="metrics">
-      <div class="metric"><div class="metric-lbl">Base rate</div><div class="metric-val amber" id="r-prior">—</div><div class="metric-sub">prior</div></div>
-      <div class="metric"><div class="metric-lbl">Model prob</div><div class="metric-val blue" id="r-model">—</div><div class="metric-sub" id="r-mkt">—</div></div>
-      <div class="metric"><div class="metric-lbl">Expected value</div><div class="metric-val" id="ev-val">—</div><div class="metric-sub" id="ev-sig">—</div></div>
-      <div class="metric"><div class="metric-lbl">Kelly size</div><div class="metric-val" id="kelly-val">—</div><div class="metric-sub" id="kelly-sub">—</div></div>
-      <div class="metric"><div class="metric-lbl">Position ($)</div><div class="metric-val" id="pos-val">—</div><div class="metric-sub" id="pos-sub">—</div></div>
-    </div>
-    <div class="detail-grid">
-      <div class="detail-card"><div class="detail-title">F2 — Bayesian update chain</div><div id="bayes-body"></div></div>
-      <div class="detail-card"><div class="detail-title">F4 — Base rate analysis</div><div id="base-body"></div></div>
-      <div class="detail-card"><div class="detail-title">Trade plan</div><div class="detail-text" id="trade-body"></div></div>
-      <div class="detail-card"><div class="detail-title">Key risks</div><div id="risks-body"></div></div>
-    </div>
-    <div class="bottom-line" id="bottom-line"></div>
-  </div>
-
 </div>
+
 <script>
 const PROXY = "https://kalshiii-production.up.railway.app";
 const PKEY = "super_random_password_12345678910";
 
-const EVT = {
-  mom1:{delta:0.08,label:"Price trending toward strike"},
-  mom2:{delta:-0.08,label:"Price trending away from strike"},
-  mom3:{delta:0.00,label:"Price within 1% of strike"},
-  mom4:{delta:0.05,label:"Strong volume supporting direction"},
-  mac1:{delta:0.07,label:"Bullish macro catalyst"},
-  mac2:{delta:-0.07,label:"Bearish macro catalyst"},
-  mac3:{delta:0.09,label:"Major supply shock"},
-  mac4:{delta:-0.05,label:"Policy response dampening move"},
-  str1:{delta:-0.04,label:"Major psychological level"},
-  str2:{delta:0.06,label:"Recently broke above strike"},
-  str3:{delta:-0.06,label:"Recent rejection at strike"},
-  str4:{delta:0.04,label:"Strong support below price"},
-  sen1:{delta:-0.05,label:"Extreme fear/panic"},
-  sen2:{delta:0.04,label:"Greed/neutral sentiment"},
-  sen3:{delta:-0.02,label:"Resolution >24h"},
-  sen4:{delta:0.03,label:"Resolution <6h"}
+const EVD = {
+  m1: { delta: 0.08 },
+  m2: { delta: -0.08 },
+  m3: { delta: 0 },
+  m4: { delta: 0.05 },
+  mac1: { delta: 0.07 },
+  mac2: { delta: -0.07 },
+  mac3: { delta: 0.09 },
+  mac4: { delta: -0.05 },
+  s1: { delta: -0.04 },
+  s2: { delta: 0.06 },
+  s3: { delta: -0.06 },
+  s4: { delta: 0.04 },
+  sen1: { delta: -0.05 },
+  sen2: { delta: 0.04 },
+  sen3: { delta: -0.02 },
+  sen4: { delta: 0.03 },
 };
-const state = {};
-let cachedMarket = null, fetchTimer = null;
-let historicalBase = 0.50;   // updated from /market/:ticker/stats
-let priceStats = null;        // { avg_yes_price, price_change, volatility, trend, snapshot_count }
 
-function logit(p){return Math.log(p/(1-p));}
-function sigmoid(x){return 1/(1+Math.exp(-x));}
+let state = {};
+let historicalBase = 0.5;
 
-function toggle(id) {
+function switchTab(tab) {
+  document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+  document.getElementById(tab).classList.add('active');
+  event.target.classList.add('active');
+
+  if (tab === 'history') loadDBStatus();
+  if (tab === 'chat' && document.getElementById('messages').children.length === 0) {
+    addMessage('bot', 'Hello! I\'m your Kalshi quant analyst. Ask me about markets, probabilities, or trade sizing.');
+  }
+}
+
+function toggleEvidence(id) {
+  state[id] = !state[id];
   const btn = document.getElementById(id);
-  const cfg = EVT[id];
+  const cfg = EVD[id];
   if (state[id]) {
-    state[id] = false;
-    btn.className = 'ev-btn neut';
-    btn.textContent = '–';
-  } else {
-    state[id] = true;
     btn.className = 'ev-btn ' + (cfg.delta >= 0 ? 'bull' : 'bear');
     btn.textContent = cfg.delta >= 0 ? '↑' : '↓';
+  } else {
+    btn.className = 'ev-btn neut';
+    btn.textContent = '–';
   }
   updateProb();
 }
 
+function logit(p) { return Math.log(p / (1 - p)); }
+function sigmoid(x) { return 1 / (1 + Math.exp(-x)); }
+
 function updateProb() {
   const base = historicalBase;
   let logitP = logit(base);
-  const active = [];
   Object.entries(state).forEach(([id, on]) => {
-    if (on && EVT[id].delta !== 0) {
-      logitP += EVT[id].delta * 2.5;
-      active.push({id, delta: EVT[id].delta, label: EVT[id].label});
-    }
+    if (on) logitP += EVD[id].delta * 2.5;
   });
   const posterior = Math.min(0.95, Math.max(0.05, sigmoid(logitP)));
-  const override = parseFloat(document.getElementById('model-p-override').value);
-  const modelP = (!isNaN(override) && override > 0) ? override/100 : posterior;
-
-  document.getElementById('prior-display').textContent = (base*100).toFixed(0)+'%';
-  document.getElementById('posterior-display').textContent = (posterior*100).toFixed(0)+'%';
-  document.getElementById('model-display').textContent = (modelP*100).toFixed(0)+'%';
-
-  // Bayes chain visual
-  let html = `<span class="bc-step start">Prior: ${(base*100).toFixed(0)}%</span>`;
-  let runLogit = logit(base);
-  active.forEach(e => {
-    runLogit += e.delta * 2.5;
-    const p = Math.min(0.95, Math.max(0.05, sigmoid(runLogit)));
-    const dir = e.delta > 0 ? 'bull' : 'bear';
-    html += `<span class="bc-arrow">→</span><span class="bc-step ${dir}">${e.delta>0?'+':''}${(e.delta*100).toFixed(0)}% → ${(p*100).toFixed(0)}%</span>`;
-  });
-  html += `<span class="bc-arrow">→</span><span class="bc-step final">Model: ${(modelP*100).toFixed(0)}%</span>`;
-  document.getElementById('bayes-chain').innerHTML = html;
-
-  return { base, posterior, modelP, active };
+  document.getElementById('prior-val').textContent = (base * 100).toFixed(0) + '%';
+  document.getElementById('posterior-val').textContent = (posterior * 100).toFixed(0) + '%';
+  document.getElementById('model-val').textContent = (posterior * 100).toFixed(0) + '%';
+  return posterior;
 }
 
-function getFinalModelP() {
-  const override = parseFloat(document.getElementById('model-p-override').value);
-  if (!isNaN(override) && override > 0) return override/100;
-  return updateProb().modelP;
+function toggleAccordion() {
+  const acc = document.getElementById('accordion');
+  const arrow = document.getElementById('acc-arrow');
+  acc.classList.toggle('open');
+  arrow.textContent = acc.classList.contains('open') ? '▼' : '▶';
 }
 
-// Auto fetch
-function onTickerInput() {
-  clearTimeout(fetchTimer);
-  const q = document.getElementById('market-q').value.trim().toUpperCase();
-  if (q.length > 10 && q.includes('-') && !q.includes(' ')) {
-    setDot('fetching','fetching live data...');
-    fetchTimer = setTimeout(()=>autoFetch(q), 800);
-  } else {
-    setDot('','enter ticker to auto-fetch');
-    document.getElementById('live-preview').classList.remove('on');
-    cachedMarket = null;
-  }
+function extractJSON(txt) {
+  // 1. Try direct parse
+  try { return JSON.parse(txt); } catch(_) {}
+  // 2. Strip markdown fences
+  const stripped = txt.replace(/```json[\s\S]*?```|```[\s\S]*?```/g, s =>
+    s.replace(/```json|```/g, '').trim()
+  ).trim();
+  try { return JSON.parse(stripped); } catch(_) {}
+  // 3. Grab first {...} block
+  const m = txt.match(/\{[\s\S]*\}/);
+  if (m) { try { return JSON.parse(m[0]); } catch(_) {} }
+  // 4. All failed
+  throw new SyntaxError('Could not extract JSON from response');
 }
 
-async function autoFetch(ticker) {
+async function fetchTickerData() {
+  const ticker = document.getElementById('ticker-input').value.trim().toUpperCase();
+  if (!ticker) return;
   try {
-    const r = await fetch(`${PROXY}/market/${encodeURIComponent(ticker)}`,{headers:{'x-proxy-api-key':PKEY}});
-    if (!r.ok) throw new Error();
+    const r = await fetch(`${PROXY}/market/${encodeURIComponent(ticker)}`, {
+      headers: { 'x-proxy-api-key': PKEY }
+    });
+    if (!r.ok) throw new Error('Ticker not found');
     const d = await r.json();
-    if (!d.market) throw new Error();
-    cachedMarket = d.market;
-    const m = cachedMarket;
-    const raw = m.last_price_dollars ?? m.yes_ask_dollars ?? m.yes_bid_dollars ?? null;
-    if (raw && parseFloat(raw)>0) document.getElementById('market-price').value = Math.round(parseFloat(raw)*100);
-    if (!document.getElementById('res-date').value && m.close_time)
-      document.getElementById('res-date').value = new Date(m.close_time).toLocaleString();
-    document.getElementById('lp-price').textContent = raw ? '$'+raw : '—';
-    document.getElementById('lp-ask').textContent = m.yes_ask_dollars ? '$'+m.yes_ask_dollars : '—';
-    document.getElementById('lp-bid').textContent = m.yes_bid_dollars ? '$'+m.yes_bid_dollars : '—';
-    document.getElementById('lp-strike').textContent = m.floor_strike ? '$'+Number(m.floor_strike).toLocaleString() : '—';
-    document.getElementById('live-preview').classList.add('on');
-    setDot('ok',`live · ${m.subtitle||ticker} · ${m.status}`);
-
-    // Fetch historical stats to seed base rate prior
+    const m = d.market || d;
+    if (m.last_price_dollars) document.getElementById('ticker-input').value = ticker;
+    // Try to fetch stats for base rate
     try {
-      const sr = await fetch(`${PROXY}/market/${encodeURIComponent(ticker)}/stats`,{headers:{'x-proxy-api-key':PKEY}});
+      const sr = await fetch(`${PROXY}/market/${encodeURIComponent(ticker)}/stats`, {
+        headers: { 'x-proxy-api-key': PKEY }
+      });
       if (sr.ok) {
         const stats = await sr.json();
-        if (stats && stats.avg_yes_price != null && stats.snapshot_count > 0) {
-          priceStats = stats;
+        if (stats && stats.avg_yes_price) {
           historicalBase = stats.avg_yes_price;
-          const badge = document.getElementById('prior-display');
-          badge.textContent = (historicalBase*100).toFixed(0)+'%';
-          badge.title = `Historical avg from ${stats.snapshot_count} snapshots (${stats.window_hours}h)`;
           updateProb();
         }
       }
     } catch(_) {}
-
   } catch(e) {
-    setDot('fail','ticker not found — check series or enter price manually');
-    document.getElementById('live-preview').classList.remove('on');
-    cachedMarket = null;
-    historicalBase = 0.50;
-    priceStats = null;
+    showError('Ticker not found');
   }
 }
 
-function setDot(s,t){
-  document.getElementById('auto-dot').className='auto-dot'+(s?' '+s:'');
-  document.getElementById('auto-txt').textContent=t;
+function showError(msg) {
+  const el = document.getElementById('error-msg');
+  el.textContent = msg;
+  el.className = 'error-msg';
+  setTimeout(() => { el.textContent = ''; el.className = ''; }, 5000);
 }
-
-async function browseMarkets() {
-  const series = document.getElementById('series-input').value.trim().toUpperCase()||'KXBTCD';
-  const list = document.getElementById('market-list');
-  list.innerHTML='<div style="font-family:var(--mono);font-size:11px;color:var(--text3);padding:8px">Fetching...</div>';
-  list.classList.add('on');
-  try {
-    const r = await fetch(`${PROXY}/markets?api_key=${PKEY}&series_ticker=${series}&limit=20`);
-    const data = await r.json();
-    const markets = (data.markets||[]).filter(m=>m.status!=='finalized').slice(0,15);
-    if (!markets.length){list.innerHTML='<div style="font-family:var(--mono);font-size:11px;color:var(--text3);padding:8px">No active markets for '+series+'</div>';return;}
-    list.innerHTML = markets.map(m=>{
-      const p = m.last_price_dollars??m.yes_ask_dollars??null;
-      const pd = p&&parseFloat(p)>0?'$'+p:'no price';
-      return `<div class="market-item" onclick="selectMarket('${m.ticker}','${m.close_time||''}')">
-        <div><div class="mi-title">${m.subtitle||m.title||m.ticker}</div><div class="mi-ticker">${m.ticker}</div></div>
-        <div class="mi-price">${pd}</div></div>`;
-    }).join('');
-  } catch(e){
-    list.innerHTML='<div style="font-family:var(--mono);font-size:11px;color:var(--red);padding:8px">Error — check backend connection</div>';
-  }
-}
-
-function selectMarket(ticker, closeTime) {
-  document.getElementById('market-q').value = ticker;
-  if (closeTime) document.getElementById('res-date').value = new Date(closeTime).toLocaleString();
-  document.getElementById('market-list').classList.remove('on');
-  autoFetch(ticker);
-}
-
-function evCalc(mp,pp){return(mp-pp)/pp;}
-function evSig(e){return e>0.05?'BUY':e<-0.05?'SELL':'SKIP';}
-function kellyCalc(p,pp,f){const b=(1-pp)/pp,q=1-p,full=(p*b-q)/b;return{full,scaled:Math.max(full,0)*f};}
-function setStatus(msg,err){const el=document.getElementById('status-msg');el.textContent=msg;el.className='status-msg'+(err?' error':'');}
-function setLoading(msg){document.getElementById('loading-txt').textContent=msg;}
 
 async function runAnalysis() {
-  const q = document.getElementById('market-q').value.trim();
-  const priceCents = parseFloat(document.getElementById('market-price').value);
-  const bankroll = parseFloat(document.getElementById('bankroll').value)||null;
-  const resDate = document.getElementById('res-date').value.trim();
+  const ticker = document.getElementById('ticker-input').value.trim();
+  const bankroll = parseFloat(document.getElementById('bankroll').value) || null;
   const kf = parseFloat(document.getElementById('kelly-frac').value);
   const ctx = document.getElementById('context').value.trim();
 
-  if (!q){setStatus('Enter a ticker or market question.',true);return;}
-  if (!priceCents||isNaN(priceCents)){setStatus('Market price needed — browse a market or enter manually.',true);return;}
+  if (!ticker) { showError('Enter a ticker'); return; }
 
-  const {base, posterior, modelP, active} = updateProb();
-  const finalModelP = getFinalModelP();
-  const activeLabels = active.map(e=>`${e.label} (${e.delta>0?'+':''}${(e.delta*100).toFixed(0)}%)`).join('; ')||'none selected';
+  const modelP = updateProb();
+  document.getElementById('loading-bar').classList.add('on');
+  document.getElementById('btn-analyze').disabled = true;
 
-  setStatus('');
-  document.getElementById('results').classList.remove('on');
-  document.getElementById('loading').classList.add('on');
-  document.getElementById('run-btn').disabled = true;
+  const prompt = `IMPORTANT: output raw JSON only, no markdown, no code fences, no explanation.
 
-  let liveMarket = cachedMarket;
-  if (!liveMarket) {
-    const isTicker = q.length>8&&!q.includes(' ')&&q.includes('-');
-    if (isTicker) {
-      setLoading('FETCHING LIVE KALSHI DATA...');
-      try {
-        const r = await fetch(`${PROXY}/market/${encodeURIComponent(q.toUpperCase())}`,{headers:{'x-proxy-api-key':PKEY}});
-        if(r.ok){const d=await r.json();liveMarket=d.market||null;}
-      } catch(e){}
-    }
-  }
-
-  const usedLive = !!liveMarket;
-  const marketP = priceCents/100;
-  const evVal = evCalc(finalModelP, marketP);
-  const evS = evSig(evVal);
-  const k = kellyCalc(finalModelP, marketP, kf);
-
-  setLoading('RUNNING EV · BAYES · KELLY · BASE RATE...');
-
-  const liveCtx = liveMarket
-    ? `Live Kalshi: strike=$${liveMarket.floor_strike}, last=${liveMarket.last_price_dollars}, status=${liveMarket.status}, closes=${liveMarket.close_time}, resolution rule: "${liveMarket.rules_primary}"`
-    : '';
-
-  const histCtx = priceStats && priceStats.snapshot_count > 0
-    ? `Price history (${priceStats.window_hours}h, ${priceStats.snapshot_count} snapshots): avg=${(priceStats.avg_yes_price*100).toFixed(1)}% | range=${(priceStats.min_yes_price*100).toFixed(1)}%–${(priceStats.max_yes_price*100).toFixed(1)}% | change=${priceStats.price_change>=0?'+':''}${(priceStats.price_change*100).toFixed(1)}% | volatility=${(priceStats.volatility*100).toFixed(2)}% | trend=${priceStats.trend}`
-    : 'Price history: not yet available (pipeline collecting data)';
-
-  const prompt = `You are a strict prediction market quant analyst. Return ONLY valid JSON, no markdown, no preamble.
-
-MARKET: ${q}
-Market implied probability: ${(marketP*100).toFixed(1)}%
-Base rate prior: ${(base*100).toFixed(0)}% ${priceStats&&priceStats.snapshot_count>0?`(from ${priceStats.snapshot_count} historical snapshots)`:'(default — no history yet)'}
-Bayesian posterior (computed from evidence checklist): ${(posterior*100).toFixed(0)}%
-Final model probability: ${(finalModelP*100).toFixed(1)}%
-Active evidence: ${activeLabels}
-User context: ${ctx||'none'}
-${liveCtx}
-${histCtx}
-Resolution: ${resDate||'not specified'}
-Bankroll: ${bankroll?'$'+bankroll:'not provided'}
+You are a Kalshi prediction market quant analyst. Analyze this market:
+MARKET: ${ticker}
+Model probability: ${(modelP * 100).toFixed(0)}%
+Context: ${ctx || 'none provided'}
+Bankroll: ${bankroll ? '$' + bankroll : 'not provided'}
 Kelly fraction: ${kf}x
-Pre-computed EV: ${(evVal*100).toFixed(2)}% → ${evS}
-Pre-computed full Kelly: ${(k.full*100).toFixed(2)}%
-Pre-computed scaled Kelly (${kf}x): ${(k.scaled*100).toFixed(2)}%
-Today: March 17 2026.
+Today: March 2026.
 
-Using all of the above, produce a complete quant trade memo. The probability has already been estimated via base rates and Bayesian updating — your job is to validate it, provide deeper analysis, and produce the trade plan.
-
-Return exactly this JSON:
+Return JSON:
 {
   "signal": "BUY" or "SELL" or "SKIP",
   "confidence": "HIGH" or "MEDIUM" or "LOW",
-  "verdict": "2-3 sentence explanation of signal and reasoning",
-  "bayes_prior_source": "what historical reference class justifies the 50% prior",
-  "bayes_key_update": "which evidence item moved the needle most and why",
-  "bayes_summary": "2-3 sentences validating or challenging the posterior estimate",
-  "base_rate_class": "historical comparison class for this market type",
-  "base_rate": 0.5,
-  "base_rate_signal": "BUY" or "SELL" or "SKIP",
-  "base_rate_summary": "2 sentences on base rate vs market price",
-  "correlated_markets": "related markets worth watching or none identified",
-  "trade_plan": "3-4 sentences: entry zone, what confirms the trade, what invalidates it, when to exit",
-  "risks": ["risk 1", "risk 2", "risk 3", "BIGGEST RISK: description"],
+  "verdict": "1-2 sentence explanation",
+  "trade_plan": "entry, confirmation, exit plan",
+  "risks": ["risk 1", "risk 2", "key risk"],
   "bottom_line": "one sharp actionable sentence"
 }`;
 
   try {
-    setLoading('COMPUTING SIGNAL...');
-    const res = await fetch(`${PROXY}/analyze`,{
-      method:'POST',
-      headers:{'Content-Type':'application/json','x-proxy-api-key':PKEY},
-      body:JSON.stringify({prompt, model:'claude-sonnet-4-6', max_tokens:1000})
+    const res = await fetch(`${PROXY}/analyze`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-proxy-api-key': PKEY },
+      body: JSON.stringify({ prompt, model: 'claude-sonnet-4-6', max_tokens: 800 })
     });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.message || data.error_description || (data.error?.message) || JSON.stringify(data));
-    const txt = (data.content||[]).map(b=>b.text||'').join('');
-    let parsed;
-    try{parsed=JSON.parse(txt.replace(/```json|```/g,'').trim());}
-    catch(e){
-      document.getElementById('loading').classList.remove('on');
-      document.getElementById('run-btn').disabled=false;
-      setStatus('Parse error — try again.',true);
-      return;
-    }
-    render(parsed, marketP, finalModelP, base, posterior, bankroll, kf, usedLive, k, evVal, evS);
-  } catch(e){
-    document.getElementById('loading').classList.remove('on');
-    document.getElementById('run-btn').disabled=false;
-    setStatus('Error: ' + e.message, true);
+    if (!res.ok) throw new Error(data.message || 'API error');
+
+    const txt = (data.content || []).map(b => b.text || '').join('');
+    const parsed = extractJSON(txt);
+
+    renderResults(parsed, modelP, bankroll, kf);
+  } catch(e) {
+    showError('Error: ' + e.message);
+  } finally {
+    document.getElementById('loading-bar').classList.remove('on');
+    document.getElementById('btn-analyze').disabled = false;
   }
 }
 
-function render(p, marketP, finalModelP, base, posterior, bankroll, kf, usedLive, k, evVal, evS) {
-  document.getElementById('loading').classList.remove('on');
-  document.getElementById('run-btn').disabled = false;
+function renderResults(p, modelP, bankroll, kf) {
+  const sig = (p.signal || 'SKIP').toUpperCase();
+  const badge = document.getElementById('sig-badge');
+  badge.textContent = sig;
+  badge.className = 'sig-badge ' + (sig === 'BUY' ? 'buy' : sig === 'SELL' ? 'sell' : 'skip');
 
-  const sig = p.signal||evS;
-  const sb = document.getElementById('sig-badge');
-  sb.textContent = sig;
-  sb.className = 'sig-badge '+(sig==='BUY'?'sig-buy':sig==='SELL'?'sig-sell':'sig-skip');
-  document.getElementById('conf-badge').textContent = (p.confidence||'MEDIUM')+' CONFIDENCE';
-  document.getElementById('live-tag').className = 'live-tag'+(usedLive?' on':'');
-  document.getElementById('verdict-text').textContent = p.verdict||'';
+  document.getElementById('verdict').textContent = p.verdict || '';
 
-  document.getElementById('r-prior').textContent = (base*100).toFixed(0)+'%';
-  const rm = document.getElementById('r-model');
-  rm.textContent = (finalModelP*100).toFixed(0)+'%';
-  rm.className = 'metric-val blue';
-  document.getElementById('r-mkt').textContent = 'market: '+(marketP*100).toFixed(0)+'%';
+  const ev = (modelP - 0.5) * 0.1; // simplified
+  document.getElementById('metric-ev').textContent = (ev >= 0 ? '+' : '') + (ev * 100).toFixed(1) + '%';
 
-  const evEl = document.getElementById('ev-val');
-  evEl.textContent = (evVal>=0?'+':'')+(evVal*100).toFixed(1)+'%';
-  evEl.className = 'metric-val '+(evS==='BUY'?'green':evS==='SELL'?'red':'');
-  document.getElementById('ev-sig').textContent = 'signal: '+evS;
+  const kelly = (bankroll && modelP > 0.5) ? (modelP * 2 - 1) * kf : 0;
+  document.getElementById('metric-kelly').textContent = (kelly * 100).toFixed(1) + '%';
 
-  const kEl = document.getElementById('kelly-val');
-  kEl.textContent = (k.scaled*100).toFixed(1)+'%';
-  kEl.className = 'metric-val '+(k.scaled>0?'green':'');
-  document.getElementById('kelly-sub').textContent = 'full: '+(k.full*100).toFixed(1)+'%';
+  const pos = bankroll && kelly > 0 ? '$' + Math.round(bankroll * kelly) : '—';
+  document.getElementById('metric-pos').textContent = pos;
 
-  const posEl = document.getElementById('pos-val');
-  if (bankroll&&k.scaled>0){
-    posEl.textContent='$'+(bankroll*k.scaled).toFixed(0);
-    posEl.className='metric-val green';
-    document.getElementById('pos-sub').textContent='of $'+bankroll;
-  } else if (k.scaled<=0){
-    posEl.textContent='$0';posEl.className='metric-val';
-    document.getElementById('pos-sub').textContent='no edge';
-  } else {
-    posEl.textContent='—';posEl.className='metric-val';
-    document.getElementById('pos-sub').textContent='add bankroll';
-  }
+  document.getElementById('trade-plan-text').textContent = 'Trade Plan:\n' + (p.trade_plan || '—');
+  document.getElementById('risks-text').textContent = 'Risks:\n' + (p.risks || []).join('\n');
+  document.getElementById('bottom-line-text').textContent = p.bottom_line || '';
 
-  document.getElementById('bayes-body').innerHTML=`
-    <div class="detail-row"><span class="dl">Prior source</span><span class="dv" style="font-size:10px;max-width:150px;text-align:right">${p.bayes_prior_source||'—'}</span></div>
-    <div class="detail-row"><span class="dl">Base rate prior</span><span class="dv">${(base*100).toFixed(0)}%</span></div>
-    <div class="detail-row"><span class="dl">Bayesian posterior</span><span class="dv">${(posterior*100).toFixed(0)}%</span></div>
-    <div class="detail-row"><span class="dl">Key update</span><span class="dv" style="font-size:10px;max-width:150px;text-align:right">${p.bayes_key_update||'—'}</span></div>
-    <div class="detail-text">${p.bayes_summary||''}</div>`;
-
-  const br=(p.base_rate!=null)?(parseFloat(p.base_rate)*100).toFixed(0)+'%':'N/A';
-  document.getElementById('base-body').innerHTML=`
-    <div class="detail-row"><span class="dl">Reference class</span><span class="dv" style="font-size:10px;max-width:150px;text-align:right">${p.base_rate_class||'—'}</span></div>
-    <div class="detail-row"><span class="dl">Historical rate</span><span class="dv">${br}</span></div>
-    <div class="detail-row"><span class="dl">Signal</span><span class="dv">${p.base_rate_signal||'—'}</span></div>
-    <div class="detail-text">${p.base_rate_summary||''}</div>`;
-
-  document.getElementById('trade-body').innerHTML=(p.trade_plan||'—')+
-    (p.correlated_markets&&p.correlated_markets!=='none identified'
-      ?`<br><br><span style="color:var(--text3);font-family:var(--mono);font-size:10px">RELATED: ${p.correlated_markets}</span>`:'');
-
-  document.getElementById('risks-body').innerHTML=(p.risks||[]).map(r=>`
-    <div class="risk-item">
-      <div class="rpip ${r.toUpperCase().startsWith('BIGGEST')?'crit':''}"></div>
-      <span>${r}</span>
-    </div>`).join('');
-
-  document.getElementById('bottom-line').textContent=p.bottom_line||'';
   document.getElementById('results').classList.add('on');
-  document.getElementById('results').scrollIntoView({behavior:'smooth',block:'start'});
 }
+
+async function loadDBStatus() {
+  try {
+    const r = await fetch(`${PROXY}/db/status`);
+    const d = await r.json();
+    document.getElementById('db-markets').textContent = d.markets || 0;
+    document.getElementById('db-snapshots').textContent = d.snapshots || 0;
+    document.getElementById('db-last').textContent = d.last_snapshot ? new Date(d.last_snapshot).toLocaleTimeString() : '—';
+
+    // Load movers
+    const mr = await fetch(`${PROXY}/markets/movers?hours=1&min_move=0.03`, {
+      headers: { 'x-proxy-api-key': PKEY }
+    });
+    const movers = await mr.json();
+    const tbody = document.getElementById('movers-body');
+    tbody.innerHTML = (movers.movers || []).slice(0, 10).map(m =>
+      `<tr><td>${m.ticker}</td><td>${m.title || ''}</td><td>${(m.price_move * 100).toFixed(1)}%</td><td>${m.price_move > 0 ? '↑' : '↓'}</td></tr>`
+    ).join('') || '<tr><td colspan="4">No movers</td></tr>';
+  } catch(e) {
+    console.error('DB load error:', e);
+  }
+}
+
+async function loadPriceHistory() {
+  const ticker = document.getElementById('history-ticker').value.trim();
+  if (!ticker) return;
+  try {
+    const r = await fetch(`${PROXY}/market/${encodeURIComponent(ticker)}/history?hours=24`, {
+      headers: { 'x-proxy-api-key': PKEY }
+    });
+    const d = await r.json();
+    const tbody = document.getElementById('history-body');
+    tbody.innerHTML = (d.history || []).map(h =>
+      `<tr><td>${new Date(h.snapshot_time).toLocaleTimeString()}</td><td>${(h.yes_price * 100).toFixed(1)}%</td><td>${(h.yes_bid * 100).toFixed(1)}%</td><td>${(h.yes_ask * 100).toFixed(1)}%</td><td>${h.source || ''}</td></tr>`
+    ).join('') || '<tr><td colspan="5">No data</td></tr>';
+  } catch(e) {
+    console.error('History load error:', e);
+  }
+}
+
+function addMessage(role, text) {
+  const msg = document.createElement('div');
+  msg.className = 'message ' + role;
+  msg.innerHTML = `<div class="msg-bubble ${role}">${escapeHtml(text)}</div>`;
+  document.getElementById('messages').appendChild(msg);
+  document.getElementById('messages').scrollTop = document.getElementById('messages').scrollHeight;
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+async function sendMessage() {
+  const input = document.getElementById('chat-input');
+  const msg = input.value.trim();
+  if (!msg) return;
+
+  addMessage('user', msg);
+  input.value = '';
+
+  try {
+    const prompt = `You are a Kalshi prediction market quant analyst. The user will ask you questions about markets, probabilities, strategies, and trade sizing. Answer concisely and accurately. Today: March 2026.
+
+User: ${msg}`;
+
+    const res = await fetch(`${PROXY}/analyze`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-proxy-api-key': PKEY },
+      body: JSON.stringify({ prompt, model: 'claude-sonnet-4-6', max_tokens: 500 })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || 'Error');
+
+    const txt = (data.content || []).map(b => b.text || '').join('');
+    addMessage('bot', txt);
+  } catch(e) {
+    addMessage('bot', '❌ Error: ' + e.message);
+  }
+}
+
+// Load history movers on page load
+window.addEventListener('load', () => {
+  loadDBStatus();
+});
 </script>
+
 </body>
 </html>
