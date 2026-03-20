@@ -5,7 +5,7 @@ import rateLimit from "express-rate-limit";
 import helmet from "helmet";
 import cors from "cors";
 import morgan from "morgan";
-import { createDb, getMarket, getMarketStats, getPriceHistory, getMovers, getDbStatus, scanMarkets } from "./db.js";
+import { createDb, getMarket, getMarketStats, getPriceHistory, getMovers, getDbStatus, scanMarkets, getPostTradeDeltas } from "./db.js";
 import { KalshiPipeline } from "./pipeline.js";
 
 dotenv.config();
@@ -180,6 +180,69 @@ app.get("/scan", requireProxyApiKey, (req, res) => {
   }
 });
 
+app.get("/market/:ticker/reaction", requireProxyApiKey, (req, res) => {
+  const ticker = req.params.ticker;
+  const hours  = parseFloat(req.query.hours) || 24;
+  try {
+    const trades = db.prepare(`
+      SELECT price, size, trade_time
+      FROM trades
+      WHERE ticker = ?
+      ORDER BY trade_time ASC
+    `).all(ticker);
+
+    if (trades.length < 5) {
+      return res.json({ ticker, samples: 0, avg_delta_5m: null, message: "insufficient_trades" });
+    }
+
+    // Top 10%: 90th percentile by count (size)
+    const sizes   = trades.map(t => t.size).sort((a, b) => a - b);
+    const p90size = sizes[Math.floor(sizes.length * 0.9)];
+    const large   = trades.filter(t => t.size >= p90size);
+
+    // Fetch snapshots for this ticker
+    const cutoff = new Date(Date.now() - (hours + 1) * 3600 * 1000).toISOString();
+    const snaps  = db.prepare(`
+      SELECT yes_price, snapshot_time
+      FROM price_snapshots
+      WHERE ticker = ? AND snapshot_time > ? AND yes_price IS NOT NULL
+      ORDER BY snapshot_time ASC
+    `).all(ticker, cutoff);
+
+    if (snaps.length < 2) {
+      return res.json({ ticker, samples: 0, avg_delta_5m: null, message: "insufficient_snapshots" });
+    }
+
+    const snapMs = snaps.map(s => ({ price: s.yes_price, t: new Date(s.snapshot_time).getTime() }));
+    function nearestPrice(targetMs, tolMs = 180000) {
+      let best = null, bestDiff = Infinity;
+      for (const s of snapMs) {
+        const diff = Math.abs(s.t - targetMs);
+        if (diff < bestDiff) { bestDiff = diff; best = s; }
+      }
+      return bestDiff <= tolMs ? best : null;
+    }
+
+    const deltas = [];
+    for (const trade of large) {
+      const tradeMs = new Date(trade.trade_time).getTime();
+      const entry   = nearestPrice(tradeMs);
+      const after5m = nearestPrice(tradeMs + 5 * 60000);
+      if (entry && after5m && after5m.t !== entry.t) {
+        deltas.push(after5m.price - entry.price);
+      }
+    }
+
+    const avg_delta_5m = deltas.length
+      ? +(deltas.reduce((a, b) => a + b, 0) / deltas.length).toFixed(4)
+      : null;
+
+    res.json({ ticker, samples: deltas.length, avg_delta_5m });
+  } catch (err) {
+    res.status(500).json({ error: "reaction_error", message: err.message });
+  }
+});
+
 app.get("/db/status", (req, res) => {
   try {
     res.json(getDbStatus(db));
@@ -190,13 +253,27 @@ app.get("/db/status", (req, res) => {
 
 // ─── Claude analysis proxy ────────────────────────────────────────────────────
 
+function stripImageContent(messages) {
+  return messages.map(msg => {
+    if (!Array.isArray(msg.content)) return msg;
+    const filtered = msg.content.filter(block => block.type !== "image" && block.type !== "image_url");
+    return { ...msg, content: filtered };
+  });
+}
+
 app.post("/analyze", requireProxyApiKey, async (req, res) => {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     return res.status(503).json({ error: "no_api_key", message: "ANTHROPIC_API_KEY not configured on server" });
   }
-  const { prompt, model = "claude-sonnet-4-6", max_tokens = 1200 } = req.body;
-  if (!prompt) return res.status(400).json({ error: "missing_prompt" });
+  const { prompt, messages: rawMessages, model = "claude-sonnet-4-6", max_tokens = 1200 } = req.body;
+  if (!prompt && !rawMessages) return res.status(400).json({ error: "missing_prompt" });
+
+  // Build messages array from either prompt string or messages array
+  let messages = rawMessages
+    ? stripImageContent(rawMessages)
+    : [{ role: "user", content: prompt }];
+
   try {
     const r = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
@@ -205,7 +282,7 @@ app.post("/analyze", requireProxyApiKey, async (req, res) => {
         "x-api-key": apiKey,
         "anthropic-version": "2023-06-01"
       },
-      body: JSON.stringify({ model, max_tokens, messages: [{ role: "user", content: prompt }] })
+      body: JSON.stringify({ model, max_tokens, messages })
     });
     const data = await r.json();
     res.status(r.status).json(data);

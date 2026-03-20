@@ -14,7 +14,7 @@ import { upsertMarket, recordSnapshot, recordTrade, getActiveMarkets } from "./d
 const BASE_URL = "https://clob.polymarket.com";
 const WS_URL   = "wss://ws-subscriptions-clob.polymarket.com/ws/market";
 
-const SNAPSHOT_INTERVAL_SEC = parseInt(process.env.SNAPSHOT_INTERVAL_SEC || "60", 10);
+const SNAPSHOT_INTERVAL_SEC = parseInt(process.env.SNAPSHOT_INTERVAL_SEC || "10", 10);
 const REFRESH_INTERVAL_SEC  = parseInt(process.env.REFRESH_INTERVAL_SEC  || "300", 10);
 
 // ─── REST helpers ─────────────────────────────────────────────────────────────
@@ -53,7 +53,7 @@ async function fetchAndStoreMarkets(db, logger) {
   }
 }
 
-async function snapshotTicker(db, conditionId, yesTokenId, logger) {
+async function snapshotTicker(db, conditionId, yesTokenId, volume, logger) {
   try {
     const bookData = await polyGet("/book", { token_id: yesTokenId });
 
@@ -68,7 +68,29 @@ async function snapshotTicker(db, conditionId, yesTokenId, logger) {
       : (yesBid ?? yesAsk ?? null);
     const noPrice = yesPrice !== null ? +(1 - yesPrice).toFixed(4) : null;
 
-    recordSnapshot(db, conditionId, { yes_price: yesPrice, yes_bid: yesBid, yes_ask: yesAsk, no_price: noPrice }, "rest");
+    recordSnapshot(db, conditionId, {
+      yes_price: yesPrice,
+      yes_bid:   yesBid,
+      yes_ask:   yesAsk,
+      no_price:  noPrice,
+      volume:    volume ?? null,
+    }, "rest");
+
+    // Fetch and store recent trades for this market
+    try {
+      const tradesData = await polyGet("/trades", { token_id: yesTokenId, limit: 50 });
+      const trades = tradesData.data || tradesData || [];
+      for (const t of (Array.isArray(trades) ? trades : [])) {
+        recordTrade(db, {
+          ticker:       conditionId,
+          price:        parseFloat(t.price),
+          count:        parseFloat(t.size ?? t.count ?? 0),
+          created_time: t.created_at || t.created_time || new Date().toISOString(),
+          taker_side:   t.taker_side || t.side || null,
+        });
+      }
+    } catch (_) {} // trades are best-effort; don't fail the snapshot
+
     return true;
   } catch (err) {
     if (err?.response?.status !== 404) {
@@ -83,8 +105,8 @@ async function runRestSnapshots(db, logger) {
   logger(`Pipeline: snapshotting ${markets.length} markets via REST`);
   let ok = 0, errors = 0;
 
-  for (const { ticker, yes_token_id } of markets) {
-    const success = await snapshotTicker(db, ticker, yes_token_id, logger);
+  for (const { ticker, yes_token_id, volume } of markets) {
+    const success = await snapshotTicker(db, ticker, yes_token_id, volume, logger);
     if (success) ok++; else errors++;
     await new Promise((r) => setTimeout(r, 200)); // 5 req/s
   }

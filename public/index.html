@@ -1072,16 +1072,23 @@ function selectOpportunity(ticker, price) {
 
 // Trade Deck
 async function browseMarkets() {
-  const series = document.getElementById('series-input').value.trim().toUpperCase();
+  const series = document.getElementById('series-input').value.trim();
   if (!series) return;
   const list = document.getElementById('market-list');
   list.style.display = 'block';
   list.innerHTML = '<div style="padding: 0.75rem; font-size: 12px; color: var(--text-dim);">Fetching...</div>';
   try {
-    const r = await fetch(`${PROXY}/markets?api_key=${PKEY}&series_ticker=${series}&limit=20`);
+    const r = await fetch(`${PROXY}/markets?api_key=${PKEY}&series_ticker=${encodeURIComponent(series)}&limit=50`);
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const data = await r.json();
-    const markets = (data.markets || []).filter(m => m.status !== 'finalized').slice(0, 15);
+    const keyword = series.toLowerCase();
+    const markets = (data.markets || [])
+      .filter(m => m.status !== 'finalized')
+      .filter(m => {
+        const text = ((m.title || '') + ' ' + (m.subtitle || '') + ' ' + (m.category || '')).toLowerCase();
+        return text.includes(keyword);
+      })
+      .slice(0, 15);
     if (!markets.length) {
       list.innerHTML = `<div style="padding: 0.75rem; font-size: 12px; color: var(--text-dim);">No active markets for ${series}</div>`;
       return;
