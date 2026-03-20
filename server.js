@@ -5,7 +5,7 @@ import rateLimit from "express-rate-limit";
 import helmet from "helmet";
 import cors from "cors";
 import morgan from "morgan";
-import { createDb, getMarket, getMarketStats, getPriceHistory, getMovers, getDbStatus, scanMarkets, getPostTradeDeltas } from "./db.js";
+import { createDb, getMarket, getLatestPrice, getMarketStats, getPriceHistory, getMovers, getDbStatus, scanMarkets, getPostTradeDeltas } from "./db.js";
 import { KalshiPipeline } from "./pipeline.js";
 
 dotenv.config();
@@ -39,11 +39,21 @@ async function polyGet(path, params = {}) {
   return resp.data;
 }
 
-// Normalize a Polymarket market object to the shape the frontend expects
-function normalizeMarket(m) {
+/**
+ * Normalize a Polymarket market object to the shape the frontend expects.
+ * Optionally merges a local DB snapshot (latest price_snapshots row) so the
+ * frontend sees real bid/ask instead of the same mid-price for both.
+ */
+function normalizeMarket(m, snap = null) {
   const yesToken = m.tokens?.find(t => t.outcome === "Yes") || m.tokens?.[0];
   const noToken  = m.tokens?.find(t => t.outcome === "No")  || m.tokens?.[1];
-  const price    = yesToken?.price ?? null;
+  const midPrice = yesToken?.price ?? null;
+
+  // Prefer real bid/ask from the latest stored snapshot over the market mid-price
+  const bid = snap?.yes_bid  ?? (midPrice !== null ? +(midPrice - 0.005).toFixed(4) : null);
+  const ask = snap?.yes_ask  ?? (midPrice !== null ? +(midPrice + 0.005).toFixed(4) : null);
+  const last = snap?.yes_price ?? midPrice;
+
   return {
     ticker:             m.condition_id || m.ticker,
     condition_id:       m.condition_id,
@@ -55,9 +65,9 @@ function normalizeMarket(m) {
     volume:             m.volumeClob  || m.volume  || 0,
     liquidity:          m.liquidityClob || m.liquidity || 0,
     floor_strike:       null,
-    last_price_dollars: price !== null ? price.toFixed(2) : null,
-    yes_ask_dollars:    price !== null ? price.toFixed(2) : null,
-    yes_bid_dollars:    price !== null ? price.toFixed(2) : null,
+    last_price_dollars: last !== null ? (+last).toFixed(2) : null,
+    yes_ask_dollars:    ask  !== null ? (+ask).toFixed(2)  : null,
+    yes_bid_dollars:    bid  !== null ? (+bid).toFixed(2)  : null,
     yes_token_id:       yesToken?.token_id || null,
     no_token_id:        noToken?.token_id  || null,
   };
@@ -81,14 +91,46 @@ app.get("/markets", requireProxyApiKey, async (req, res) => {
   }
 });
 
-// Single market — fetch from Polymarket and normalize
+// Single market — fetch from Polymarket, enrich with local snapshot for real bid/ask,
+// and fall back to local DB if Polymarket returns 404 (e.g. market no longer active).
 app.get("/market/:ticker", requireProxyApiKey, async (req, res) => {
+  const ticker = req.params.ticker;
+  const snap   = getLatestPrice(db, ticker); // may be null if not yet indexed
+
   try {
-    const data   = await polyGet(`/markets/${encodeURIComponent(req.params.ticker)}`);
-    const market = normalizeMarket(data);
+    const data   = await polyGet(`/markets/${encodeURIComponent(ticker)}`);
+    const market = normalizeMarket(data, snap);
     res.json({ market });
   } catch (err) {
     const status = err?.response?.status || 500;
+
+    // If Polymarket says 404, serve from local DB cache if we have it
+    if (status === 404) {
+      const dbMarket = getMarket(db, ticker);
+      if (dbMarket) {
+        return res.json({
+          market: {
+            ticker:             dbMarket.ticker,
+            condition_id:       dbMarket.ticker,
+            title:              dbMarket.title,
+            subtitle:           dbMarket.title,
+            category:           dbMarket.category || "",
+            status:             dbMarket.status,
+            close_time:         dbMarket.close_time,
+            volume:             dbMarket.volume || 0,
+            liquidity:          dbMarket.liquidity || 0,
+            floor_strike:       null,
+            last_price_dollars: snap ? (+snap.yes_price).toFixed(2) : null,
+            yes_ask_dollars:    snap?.yes_ask  ? (+snap.yes_ask).toFixed(2)  : null,
+            yes_bid_dollars:    snap?.yes_bid  ? (+snap.yes_bid).toFixed(2)  : null,
+            yes_token_id:       dbMarket.yes_token_id,
+            no_token_id:        dbMarket.no_token_id,
+            _source:            "local_cache",
+          }
+        });
+      }
+    }
+
     res.status(status).json({ error: "polymarket_error", message: err?.response?.data || err?.message });
   }
 });
@@ -117,10 +159,6 @@ app.get("/trades/:ticker", requireProxyApiKey, async (req, res) => {
     const status = err?.response?.status || 500;
     res.status(status).json({ error: "polymarket_error", message: err?.response?.data || err?.message });
   }
-});
-
-app.use((err, req, res, next) => {
-  res.status(500).json({ error: "internal_error", message: err?.message });
 });
 
 // ─── History / stats endpoints ────────────────────────────────────────────────
@@ -289,6 +327,22 @@ app.post("/analyze", requireProxyApiKey, async (req, res) => {
   } catch (err) {
     res.status(502).json({ error: "upstream_error", message: err.message });
   }
+});
+
+// ─── Trade execution (placeholder — wallet integration required) ─────────────
+
+app.post("/trade", requireProxyApiKey, (req, res) => {
+  res.status(501).json({
+    status:  "not_implemented",
+    message: "Wallet integration required. Connect a Polymarket API key + private key to enable order submission.",
+  });
+});
+
+// ─── Global error handler (must be last) ─────────────────────────────────────
+
+app.use((err, req, res, next) => {
+  console.error("Unhandled error:", err?.message);
+  res.status(500).json({ error: "internal_error", message: err?.message });
 });
 
 // ─── Start server + pipeline ──────────────────────────────────────────────────
