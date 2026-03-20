@@ -6,7 +6,7 @@ import rateLimit from "express-rate-limit";
 import helmet from "helmet";
 import cors from "cors";
 import morgan from "morgan";
-import { createDb, getMarketStats, getPriceHistory, getMovers, getDbStatus } from "./db.js";
+import { createDb, getMarketStats, getPriceHistory, getMovers, getDbStatus, scanMarkets } from "./db.js";
 import { KalshiPipeline } from "./pipeline.js";
 
 dotenv.config();
@@ -171,6 +171,23 @@ app.get("/markets/movers", requireProxyApiKey, (req, res) => {
     res.json({ hours, min_move: minMove, count: movers.length, movers });
   } catch (err) {
     res.status(500).json({ error: "db_error", message: err.message });
+  }
+});
+
+app.get("/scan", requireProxyApiKey, (req, res) => {
+  const hours   = parseFloat(req.query.hours)     || 4;
+  const minEdge = parseFloat(req.query.min_edge)  || 0.02;
+  try {
+    const opportunities = scanMarkets(db, hours, minEdge);
+    res.json({
+      scan_time: new Date().toISOString(),
+      hours,
+      min_edge: minEdge,
+      count: opportunities.length,
+      opportunities,
+    });
+  } catch (err) {
+    res.status(500).json({ error: "scan_error", message: err.message });
   }
 });
 
