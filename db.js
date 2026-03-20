@@ -1,7 +1,7 @@
 import Database from "better-sqlite3";
 import path from "path";
 
-const DB_PATH = process.env.DB_PATH || "kalshi.db";
+const DB_PATH = process.env.DB_PATH || "polymarket.db";
 
 let _db = null;
 
@@ -27,6 +27,8 @@ export function createDb(dbPath = DB_PATH) {
       volume          REAL DEFAULT 0,
       liquidity       REAL DEFAULT 0,
       winner          TEXT,
+      yes_token_id    TEXT,
+      no_token_id     TEXT,
       updated_at      TEXT NOT NULL
     );
 
@@ -58,6 +60,10 @@ export function createDb(dbPath = DB_PATH) {
       ON trades(ticker, trade_time);
   `);
 
+  // Migrate existing DBs that don't have token ID columns yet
+  try { db.exec("ALTER TABLE markets ADD COLUMN yes_token_id TEXT"); } catch (_) {}
+  try { db.exec("ALTER TABLE markets ADD COLUMN no_token_id TEXT"); } catch (_) {}
+
   _db = db;
   return db;
 }
@@ -68,10 +74,10 @@ const _upsertMarket = (db) =>
   db.prepare(`
     INSERT INTO markets
       (ticker, title, category, floor_strike, status, close_time,
-       rules_primary, volume, liquidity, winner, updated_at)
+       rules_primary, volume, liquidity, winner, yes_token_id, no_token_id, updated_at)
     VALUES
       (@ticker, @title, @category, @floor_strike, @status, @close_time,
-       @rules_primary, @volume, @liquidity, @winner, @updated_at)
+       @rules_primary, @volume, @liquidity, @winner, @yes_token_id, @no_token_id, @updated_at)
     ON CONFLICT(ticker) DO UPDATE SET
       title         = excluded.title,
       status        = excluded.status,
@@ -79,29 +85,41 @@ const _upsertMarket = (db) =>
       volume        = excluded.volume,
       liquidity     = excluded.liquidity,
       winner        = excluded.winner,
+      yes_token_id  = excluded.yes_token_id,
+      no_token_id   = excluded.no_token_id,
       updated_at    = excluded.updated_at
   `);
 
 export function upsertMarket(db, market) {
+  // Polymarket market shape: condition_id, question, tokens[], active, closed, end_date_iso, volumeClob, liquidityClob, tags[]
+  const yesToken = market.tokens?.find(t => t.outcome === "Yes") || market.tokens?.[0];
+  const noToken  = market.tokens?.find(t => t.outcome === "No")  || market.tokens?.[1];
+
   _upsertMarket(db).run({
-    ticker:        market.ticker || market.market?.ticker || "",
-    title:         market.title  || market.market?.title  || "",
-    category:      market.category || market.market?.category || "",
-    floor_strike:  market.floor_strike ?? market.market?.floor_strike ?? null,
-    status:        market.status  || market.market?.status  || "",
-    close_time:    market.close_time || market.market?.close_time || null,
-    rules_primary: market.rules_primary || market.market?.rules_primary || "",
-    volume:        parseFloat(market.volume  ?? market.market?.volume  ?? 0) || 0,
-    liquidity:     parseFloat(market.liquidity ?? market.market?.liquidity ?? 0) || 0,
-    winner:        market.winner  ?? market.market?.winner  ?? null,
+    ticker:        market.condition_id || market.ticker || "",
+    title:         market.question     || market.title  || "",
+    category:      market.tags?.[0]?.label || market.tags?.[0]?.id || market.category || "",
+    floor_strike:  null,
+    status:        (market.active && !market.closed) ? "open" : (market.status || "closed"),
+    close_time:    market.end_date_iso || market.close_time || null,
+    rules_primary: market.description  || market.rules_primary || "",
+    volume:        parseFloat(market.volumeClob  ?? market.volume  ?? 0) || 0,
+    liquidity:     parseFloat(market.liquidityClob ?? market.liquidity ?? 0) || 0,
+    winner:        market.winner ?? null,
+    yes_token_id:  yesToken?.token_id || null,
+    no_token_id:   noToken?.token_id  || null,
     updated_at:    new Date().toISOString(),
   });
 }
 
 export function getActiveMarkets(db) {
   return db.prepare(`
-    SELECT ticker FROM markets WHERE status = 'open'
+    SELECT ticker, yes_token_id, no_token_id FROM markets WHERE status = 'open'
   `).all();
+}
+
+export function getMarket(db, ticker) {
+  return db.prepare(`SELECT * FROM markets WHERE ticker = ?`).get(ticker);
 }
 
 // ─── Snapshot helpers ─────────────────────────────────────────────────────────

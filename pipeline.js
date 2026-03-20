@@ -1,7 +1,7 @@
 /**
- * pipeline.js — Kalshi data pipeline
+ * pipeline.js — Polymarket data pipeline
  *
- * Adapts the Polymarket-style pipeline architecture to Kalshi:
+ * Three-layer architecture:
  *   - Layer 1: REST poller (periodic market + price snapshots)
  *   - Layer 2: WebSocket client (real-time price updates)
  *   - Layer 3: Orchestrator (starts both, handles scheduling)
@@ -9,63 +9,19 @@
 
 import WebSocket from "ws";
 import cron from "node-cron";
-import crypto from "crypto";
 import axios from "axios";
 import { upsertMarket, recordSnapshot, recordTrade, getActiveMarkets } from "./db.js";
-import { createRequire } from "module";
 
-const BASE_KALSHI_URL =
-  process.env.BASE_KALSHI_URL || "https://api.elections.kalshi.com/trade-api/v2";
+const BASE_URL = "https://clob.polymarket.com";
+const WS_URL   = "wss://ws-subscriptions-clob.polymarket.com/ws/market";
 
 const SNAPSHOT_INTERVAL_SEC = parseInt(process.env.SNAPSHOT_INTERVAL_SEC || "60", 10);
 const REFRESH_INTERVAL_SEC  = parseInt(process.env.REFRESH_INTERVAL_SEC  || "300", 10);
 
-// ─── Auth helpers (mirrors server.js signRequest) ─────────────────────────────
+// ─── REST helpers ─────────────────────────────────────────────────────────────
 
-function buildPrivateKey(raw) {
-  if (!raw) throw new Error("KALSHI_SECRET is not set");
-  if (!raw.includes("-----BEGIN")) {
-    const body = raw.replace(/\s/g, "").match(/.{1,64}/g).join("\n");
-    return `-----BEGIN PRIVATE KEY-----\n${body}\n-----END PRIVATE KEY-----`;
-  }
-  return raw.replace(/\\n/g, "\n");
-}
-
-function signRequest(method, urlPath) {
-  const KALSHI_SECRET = process.env.KALSHI_SECRET;
-  const tsSeconds = Math.floor(Date.now() / 1000).toString();
-  const message   = tsSeconds + method.toUpperCase() + urlPath;
-  const privateKey = buildPrivateKey(KALSHI_SECRET);
-
-  const signature = crypto.sign("sha256", Buffer.from(message), {
-    key:        privateKey,
-    padding:    crypto.constants.RSA_PKCS1_PSS_PADDING,
-    saltLength: crypto.constants.RSA_PSS_SALTLEN_DIGEST,
-  });
-
-  return {
-    timestamp: tsSeconds,
-    signature: signature.toString("base64"),
-  };
-}
-
-function authHeaders(method, path) {
-  const { timestamp, signature } = signRequest(method, path);
-  return {
-    "KALSHI-ACCESS-KEY":       process.env.KALSHI_KEY,
-    "KALSHI-ACCESS-SIGNATURE": signature,
-    "KALSHI-ACCESS-TIMESTAMP": timestamp,
-  };
-}
-
-async function kalshiGet(path, params = {}) {
-  const fullPath = path.startsWith("/") ? path : `/${path}`;
-  const url      = `${BASE_KALSHI_URL}${fullPath}`;
-  const resp     = await axios.get(url, {
-    params,
-    headers: authHeaders("GET", fullPath),
-    timeout: 10000,
-  });
+async function polyGet(path, params = {}) {
+  const resp = await axios.get(`${BASE_URL}${path}`, { params, timeout: 10000 });
   return resp.data;
 }
 
@@ -73,93 +29,95 @@ async function kalshiGet(path, params = {}) {
 
 async function fetchAndStoreMarkets(db, logger) {
   try {
-    let cursor = null;
-    let total  = 0;
+    let nextCursor = "";
+    let total = 0;
 
     do {
-      const params = { limit: 200, status: "open" };
-      if (cursor) params.cursor = cursor;
+      const params = { active: "true", closed: "false" };
+      if (nextCursor) params.next_cursor = nextCursor;
 
-      const data = await kalshiGet("/markets", params);
-      const markets = data.markets || [];
+      const data = await polyGet("/markets", params);
+      const markets = data.data || [];
 
       for (const m of markets) {
         upsertMarket(db, m);
         total++;
       }
 
-      cursor = data.cursor || null;
-    } while (cursor);
+      // "LTE=" is Polymarket's sentinel for "no more pages"
+      nextCursor = (data.next_cursor && data.next_cursor !== "LTE=") ? data.next_cursor : "";
+    } while (nextCursor);
 
-    logger(`Pipeline: stored/updated ${total} open markets`);
+    logger(`Pipeline: stored/updated ${total} active markets`);
   } catch (err) {
     logger(`Pipeline: market fetch error — ${err.message}`);
   }
 }
 
-async function snapshotTicker(db, ticker, logger) {
+async function snapshotTicker(db, conditionId, yesTokenId, logger) {
   try {
-    const data   = await kalshiGet(`/markets/${encodeURIComponent(ticker)}`);
-    const market = data.market || data;
+    const [priceData, bookData] = await Promise.all([
+      polyGet("/prices", { token_id: yesTokenId }),
+      polyGet("/book",   { token_id: yesTokenId }),
+    ]);
 
-    // Parse prices from Kalshi's format (cents strings or dollar strings)
-    const parse = (v) => {
-      if (v === undefined || v === null) return null;
-      const n = parseFloat(v);
-      return isNaN(n) ? null : n > 1 ? n / 100 : n; // convert cents to decimal if > 1
-    };
+    const yesPrice = parseFloat(priceData.price) || null;
 
-    recordSnapshot(db, ticker, {
-      yes_price: parse(market.last_price) ?? parse(market.yes_bid),
-      yes_bid:   parse(market.yes_bid),
-      yes_ask:   parse(market.yes_ask),
-      no_price:  parse(market.no_bid),
-    }, "rest");
+    // Polymarket orderbook: bids sorted descending, asks ascending
+    const bids = bookData.bids || [];
+    const asks = bookData.asks || [];
+    const yesBid = bids.length ? parseFloat(bids[0].price) : null;
+    const yesAsk = asks.length ? parseFloat(asks[0].price) : null;
+    const noPrice = yesPrice !== null ? +(1 - yesPrice).toFixed(4) : null;
+
+    recordSnapshot(db, conditionId, { yes_price: yesPrice, yes_bid: yesBid, yes_ask: yesAsk, no_price: noPrice }, "rest");
   } catch (err) {
     if (err?.response?.status !== 404) {
-      logger(`Pipeline: snapshot error for ${ticker} — ${err.message}`);
+      logger(`Pipeline: snapshot error for ${conditionId} — ${err.message}`);
     }
   }
 }
 
 async function runRestSnapshots(db, logger) {
   const markets = getActiveMarkets(db);
-  logger(`Pipeline: snapshotting ${markets.length} tickers via REST`);
+  logger(`Pipeline: snapshotting ${markets.length} markets via REST`);
 
-  // Batch with a small delay between requests to respect rate limits
-  for (const { ticker } of markets) {
-    await snapshotTicker(db, ticker, logger);
+  for (const { ticker, yes_token_id } of markets) {
+    if (!yes_token_id) continue;
+    await snapshotTicker(db, ticker, yes_token_id, logger);
     await new Promise((r) => setTimeout(r, 200)); // 5 req/s
   }
 }
 
 // ─── WebSocket Client ─────────────────────────────────────────────────────────
 
-const WS_URL = "wss://api.elections.kalshi.com/trade-api/v2/ws/market";
-
-class KalshiWebSocket {
+class PolymarketWebSocket {
   constructor(db, logger) {
-    this.db            = db;
-    this.logger        = logger;
-    this._ws           = null;
-    this._running      = false;
-    this._reconnectMs  = 1000;
-    this._msgCount     = 0;
-    this._subscribedTickers = new Set();
+    this.db                 = db;
+    this.logger             = logger;
+    this._ws                = null;
+    this._running           = false;
+    this._reconnectMs       = 1000;
+    this._msgCount          = 0;
+    this._tokenToMarket     = new Map(); // token_id → condition_id
+    this._subscribedTokens  = new Set();
   }
 
-  subscribeTickers(tickers) {
-    for (const t of tickers) this._subscribedTickers.add(t);
+  subscribeTokens(tokenMap) {
+    // tokenMap: array of { token_id, condition_id }
+    for (const { token_id, condition_id } of tokenMap) {
+      this._tokenToMarket.set(token_id, condition_id);
+      this._subscribedTokens.add(token_id);
+    }
     if (this._ws?.readyState === WebSocket.OPEN) {
-      this._sendSubscription(tickers);
+      this._sendSubscription([...this._subscribedTokens]);
     }
   }
 
-  _sendSubscription(tickers) {
-    if (!tickers.length) return;
-    const msg = { id: 1, cmd: "subscribe", params: { channels: ["orderbook_delta", "ticker"], market_tickers: tickers } };
-    this._ws.send(JSON.stringify(msg));
-    this.logger(`WS: subscribed to ${tickers.length} tickers`);
+  _sendSubscription(tokenIds) {
+    if (!tokenIds.length) return;
+    this._ws.send(JSON.stringify({ type: "market", assets_ids: tokenIds }));
+    this.logger(`WS: subscribed to ${tokenIds.length} tokens`);
   }
 
   async connect() {
@@ -181,30 +139,20 @@ class KalshiWebSocket {
 
   _connectOnce() {
     return new Promise((resolve, reject) => {
-      const { timestamp, signature } = signRequest("GET", "/trade-api/v2/ws/market");
-
-      const ws = new WebSocket(WS_URL, {
-        headers: {
-          "KALSHI-ACCESS-KEY":       process.env.KALSHI_KEY,
-          "KALSHI-ACCESS-SIGNATURE": signature,
-          "KALSHI-ACCESS-TIMESTAMP": timestamp,
-        },
-      });
-
+      const ws = new WebSocket(WS_URL);
       this._ws = ws;
 
       ws.on("open", () => {
-        this._reconnectMs = 1000; // reset backoff on success
-        this.logger("WS: connected to Kalshi real-time feed");
-
-        if (this._subscribedTickers.size > 0) {
-          this._sendSubscription([...this._subscribedTickers]);
+        this._reconnectMs = 1000;
+        this.logger("WS: connected to Polymarket real-time feed");
+        if (this._subscribedTokens.size > 0) {
+          this._sendSubscription([...this._subscribedTokens]);
         }
       });
 
       ws.on("message", (raw) => this._handleMessage(raw));
 
-      ws.on("close", (code, reason) => {
+      ws.on("close", (code) => {
         this.logger(`WS: closed (code=${code})`);
         this._ws = null;
         resolve();
@@ -226,44 +174,41 @@ class KalshiWebSocket {
 
   _handleMessage(raw) {
     try {
-      const data = JSON.parse(raw.toString());
-      this._msgCount++;
+      const events = JSON.parse(raw.toString());
+      const list = Array.isArray(events) ? events : [events];
+      this._msgCount += list.length;
 
       if (this._msgCount % 500 === 0) {
         this.logger(`WS: processed ${this._msgCount} messages`);
       }
 
-      const type   = data.type || data.msg;
-      const ticker = data.market_ticker || data.params?.market_ticker || data.sid;
+      for (const ev of list) {
+        const tokenId = ev.asset_id;
+        if (!tokenId) continue;
 
-      if (!ticker) return;
+        const conditionId = this._tokenToMarket.get(tokenId);
+        if (!conditionId) continue;
 
-      // Kalshi WS sends ticker updates with yes/no prices
-      if (type === "ticker" || (data.yes_price !== undefined)) {
-        const parse = (v) => {
-          if (v === undefined || v === null) return null;
-          const n = parseFloat(v);
-          return isNaN(n) ? null : n > 1 ? n / 100 : n;
-        };
+        if (ev.event_type === "price_change" || ev.price !== undefined) {
+          const yesPrice = parseFloat(ev.price) || null;
+          recordSnapshot(this.db, conditionId, {
+            yes_price: yesPrice,
+            yes_bid:   ev.bid_price ? parseFloat(ev.bid_price) : null,
+            yes_ask:   ev.ask_price ? parseFloat(ev.ask_price) : null,
+            no_price:  yesPrice !== null ? +(1 - yesPrice).toFixed(4) : null,
+          }, "ws");
+        }
 
-        recordSnapshot(this.db, ticker, {
-          yes_price: parse(data.yes_price ?? data.params?.yes_price),
-          yes_bid:   parse(data.yes_bid   ?? data.params?.yes_bid),
-          yes_ask:   parse(data.yes_ask   ?? data.params?.yes_ask),
-          no_price:  parse(data.no_price  ?? data.params?.no_price),
-        }, "ws");
-      }
-
-      // Trade events
-      if (type === "trade" && data.trade_id) {
-        recordTrade(this.db, {
-          trade_id:  data.trade_id,
-          ticker,
-          price:     parseFloat(data.price ?? 0),
-          size:      parseFloat(data.count ?? data.size ?? 0),
-          side:      data.taker_side,
-          trade_time: data.created_time ?? new Date().toISOString(),
-        });
+        if (ev.event_type === "last_trade_price" && ev.price !== undefined) {
+          recordTrade(this.db, {
+            trade_id:   `${conditionId}-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+            ticker:     conditionId,
+            price:      parseFloat(ev.price),
+            size:       parseFloat(ev.size ?? 0),
+            side:       ev.side ?? null,
+            trade_time: new Date().toISOString(),
+          });
+        }
       }
     } catch (err) {
       this.logger(`WS: message parse error — ${err.message}`);
@@ -280,27 +225,29 @@ class KalshiWebSocket {
 
 export class KalshiPipeline {
   constructor(db, logger = console.log) {
-    this.db     = db;
-    this.logger = logger;
-    this.ws     = new KalshiWebSocket(db, logger);
-    this._snapshotCron = null;
-    this._refreshCron  = null;
-    this._started      = false;
+    this.db               = db;
+    this.logger           = logger;
+    this.ws               = new PolymarketWebSocket(db, logger);
+    this._snapshotCron    = null;
+    this._refreshInterval = null;
+    this._started         = false;
   }
 
   async start() {
     if (this._started) return;
     this._started = true;
 
-    this.logger("Pipeline: initializing...");
+    this.logger("Pipeline: initializing (Polymarket)...");
 
-    // Step 1: load all open markets into DB
+    // Step 1: load all active markets into DB
     await fetchAndStoreMarkets(this.db, this.logger);
 
-    // Step 2: subscribe WS to active tickers
+    // Step 2: subscribe WS to YES token IDs for all active markets
     const active = getActiveMarkets(this.db);
-    const tickers = active.map((r) => r.ticker);
-    this.ws.subscribeTickers(tickers);
+    const tokenMap = active
+      .filter((r) => r.yes_token_id)
+      .map((r) => ({ token_id: r.yes_token_id, condition_id: r.ticker }));
+    this.ws.subscribeTokens(tokenMap);
 
     // Step 3: take initial REST snapshots
     await runRestSnapshots(this.db, this.logger);
@@ -312,17 +259,18 @@ export class KalshiPipeline {
       { scheduled: true }
     );
 
-    // Step 5: schedule metadata refresh every N seconds (using setInterval for > 60s intervals)
+    // Step 5: schedule metadata refresh
     this._refreshInterval = setInterval(async () => {
       await fetchAndStoreMarkets(this.db, this.logger);
 
-      // Subscribe any newly-discovered tickers
-      const freshTickers = getActiveMarkets(this.db).map((r) => r.ticker);
-      const newOnes = freshTickers.filter((t) => !this.ws._subscribedTickers.has(t));
-      if (newOnes.length) this.ws.subscribeTickers(newOnes);
+      const fresh = getActiveMarkets(this.db);
+      const newTokens = fresh
+        .filter((r) => r.yes_token_id && !this.ws._subscribedTokens.has(r.yes_token_id))
+        .map((r) => ({ token_id: r.yes_token_id, condition_id: r.ticker }));
+      if (newTokens.length) this.ws.subscribeTokens(newTokens);
     }, REFRESH_INTERVAL_SEC * 1000);
 
-    // Step 6: start WebSocket (non-blocking, runs in background)
+    // Step 6: start WebSocket (non-blocking)
     this.ws.connect().catch((err) => {
       this.logger(`Pipeline: WS fatal error — ${err.message}`);
     });

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Kalshi Quant Bot</title>
+<title>Polymarket Quant Bot</title>
 <style>
   :root {
     --bg: #0d0d0d;
@@ -799,7 +799,7 @@ function switchTab(tab) {
   if (tab === 'scanner') runScan();
   if (tab === 'history') loadDBStatus();
   if (tab === 'chat' && document.getElementById('messages').children.length === 0) {
-    addMessage('bot', 'Hello! I\'m your Kalshi quant analyst. Ask me about markets, probabilities, or trade sizing.');
+    addMessage('bot', 'Hello! I\'m your Polymarket quant analyst. Ask me about markets, probabilities, or trade sizing.');
   }
 }
 
@@ -1070,7 +1070,7 @@ function selectMarketFromBrowse(ticker, closeTime) {
 }
 
 async function fetchTickerData() {
-  const ticker = document.getElementById('ticker-input').value.trim().toUpperCase();
+  const ticker = document.getElementById('ticker-input').value.trim();
   if (!ticker) return;
   const statusEl = document.getElementById('ticker-status');
   statusEl.textContent = 'Fetching...';
@@ -1138,7 +1138,7 @@ async function runAnalysis() {
 
   const prompt = `IMPORTANT: output raw JSON only, no markdown, no code fences, no explanation.
 
-You are a Kalshi prediction market quant analyst. Analyze this market:
+You are a Polymarket prediction market quant analyst. Analyze this market:
 MARKET: ${ticker}
 Model probability: ${(modelP * 100).toFixed(0)}%
 Context: ${ctx || 'none provided'}
@@ -1264,7 +1264,7 @@ async function sendMessage() {
   input.value = '';
 
   try {
-    const prompt = `You are a Kalshi prediction market quant analyst. The user will ask you questions about markets, probabilities, strategies, and trade sizing. Answer concisely and accurately. Today: March 2026.
+    const prompt = `You are a Polymarket prediction market quant analyst. The user will ask you questions about markets, probabilities, strategies, and trade sizing. Answer concisely and accurately. Today: March 2026.
 
 User: ${msg}`;
 
