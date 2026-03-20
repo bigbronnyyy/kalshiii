@@ -398,6 +398,167 @@ export function scanMarkets(db, hours = 4, minEdge = 0.02) {
   return results;
 }
 
+// ─── LMSR Engine ──────────────────────────────────────────────────────────────
+//
+// C(q) = b × ln(Σ e^(qi / b))  — Hanson's Logarithmic Market Scoring Rule
+//
+// For a binary market:
+//   price_yes = e^(q_yes/b) / (e^(q_yes/b) + e^(q_no/b))   [softmax]
+//   cost to move price from p → p' ≈ b × |logit(p') - logit(p)|
+//
+// b = liquidity depth parameter. Higher b → more capital needed to move price.
+
+function logit(p) {
+  p = Math.max(0.001, Math.min(0.999, p));
+  return Math.log(p / (1 - p));
+}
+
+function sigmoid(x) {
+  return 1 / (1 + Math.exp(-x));
+}
+
+/**
+ * Estimate LMSR b parameter from market metadata.
+ * b scales with liquidity — higher b means prices are harder to move.
+ */
+function estimateB(volume, liquidity) {
+  // Use liquidity if available, fall back to volume
+  const liq = liquidity || volume || 0;
+  if (liq <= 0) return 1; // default low liquidity
+  // b ≈ liquidity / ln(2) for binary markets (max market maker loss = b*ln2)
+  return Math.max(0.5, liq / Math.LN2);
+}
+
+/**
+ * LMSR cost to move price from p_current to p_target in a binary market.
+ * Cost = b × |logit(p_target) - logit(p_current)|
+ * This is approximated from the cost function derivative.
+ */
+function lmsrCost(pCurrent, pTarget, b) {
+  return b * Math.abs(logit(pTarget) - logit(pCurrent));
+}
+
+/**
+ * Compute model price from historical stats + LMSR principles.
+ *
+ * Model combines:
+ *  1. Mean reversion (historical avg is an anchor)
+ *  2. Trend continuation (short-term momentum)
+ *  3. Volatility-adjusted confidence
+ *  4. Time decay (closer to expiry → price should polarize toward 0 or 1)
+ */
+function computeModelPrice(stats, market) {
+  const currentPrice = stats.latest_price;
+  const avgPrice = stats.avg_yes_price;
+  const trend = stats.price_change; // over the stats window
+  const vol = stats.volatility;
+
+  // Mean reversion component: pull toward historical average
+  const meanRevWeight = 0.35;
+  const meanRevTarget = avgPrice;
+
+  // Momentum component: continue recent trend (dampened)
+  const momWeight = 0.25;
+  const momTarget = Math.max(0.01, Math.min(0.99, currentPrice + trend * 0.5));
+
+  // Market-respect component: current price reflects information we don't have
+  const mktWeight = 0.40;
+  const mktTarget = currentPrice;
+
+  let modelPrice = meanRevWeight * meanRevTarget + momWeight * momTarget + mktWeight * mktTarget;
+
+  // Time decay adjustment: if market is closing soon, push toward extremes
+  if (market.close_time) {
+    const hoursToClose = (new Date(market.close_time) - Date.now()) / 3.6e6;
+    if (hoursToClose > 0 && hoursToClose < 6) {
+      // Near expiry: polarize toward 0 or 1
+      const polarize = Math.max(0, 1 - hoursToClose / 6) * 0.15;
+      modelPrice = modelPrice > 0.5
+        ? modelPrice + polarize * (1 - modelPrice)
+        : modelPrice - polarize * modelPrice;
+    }
+  }
+
+  // Volatility discount: high vol means less certainty in our model
+  // Shrink edge toward market price when vol is high
+  if (vol > 0.03) {
+    const volDiscount = Math.min(0.5, vol * 5);
+    modelPrice = modelPrice * (1 - volDiscount) + currentPrice * volDiscount;
+  }
+
+  return Math.max(0.01, Math.min(0.99, modelPrice));
+}
+
+/**
+ * Scan all active markets for LMSR edge.
+ * Returns sorted array of opportunities with edge > minEdge.
+ */
+export function scanMarkets(db, hours = 4, minEdge = 0.02) {
+  // Get all active markets with their latest snapshot
+  const markets = db.prepare(`
+    SELECT
+      m.ticker, m.title, m.volume, m.liquidity, m.close_time, m.floor_strike, m.status,
+      p.yes_price, p.yes_bid, p.yes_ask, p.spread, p.snapshot_time
+    FROM markets m
+    INNER JOIN price_snapshots p ON m.ticker = p.ticker
+    WHERE m.status = 'open'
+      AND p.yes_price IS NOT NULL
+      AND p.snapshot_time = (
+        SELECT MAX(p2.snapshot_time)
+        FROM price_snapshots p2
+        WHERE p2.ticker = m.ticker AND p2.yes_price IS NOT NULL
+      )
+  `).all();
+
+  const results = [];
+
+  for (const m of markets) {
+    const stats = getMarketStats(db, m.ticker, hours);
+    if (!stats || stats.snapshot_count < 3) continue;
+
+    const marketPrice = m.yes_price;
+    if (marketPrice <= 0.01 || marketPrice >= 0.99) continue; // Skip extreme prices
+
+    const b = estimateB(m.volume, m.liquidity);
+    const modelPrice = computeModelPrice(stats, m);
+    const edge = modelPrice - marketPrice;
+    const absEdge = Math.abs(edge);
+
+    if (absEdge < minEdge) continue;
+
+    const costToExploit = lmsrCost(marketPrice, modelPrice, b);
+    // Score: edge magnitude per unit cost — higher = better opportunity
+    const score = costToExploit > 0 ? absEdge / costToExploit : absEdge;
+
+    results.push({
+      ticker: m.ticker,
+      title: m.title,
+      market_price: +marketPrice.toFixed(4),
+      model_price: +modelPrice.toFixed(4),
+      edge: +edge.toFixed(4),
+      edge_pct: +((edge / marketPrice) * 100).toFixed(2),
+      b_param: +b.toFixed(2),
+      cost_to_exploit: +costToExploit.toFixed(4),
+      score: +score.toFixed(4),
+      spread: m.spread,
+      volume: m.volume || 0,
+      liquidity: m.liquidity || 0,
+      volatility: stats.volatility,
+      trend: stats.trend,
+      close_time: m.close_time,
+      snapshot_count: stats.snapshot_count,
+      signal: edge > 0 ? "BUY" : "SELL",
+      confidence: absEdge > 0.08 ? "HIGH" : absEdge > 0.04 ? "MEDIUM" : "LOW",
+      updated: m.snapshot_time,
+    });
+  }
+
+  // Sort by absolute edge descending (biggest opportunities first)
+  results.sort((a, b) => Math.abs(b.edge) - Math.abs(a.edge));
+
+  return results;
+}
+
 // ─── Status ───────────────────────────────────────────────────────────────────
 
 export function getDbStatus(db) {

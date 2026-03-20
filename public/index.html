@@ -415,12 +415,55 @@
     margin-bottom: 1rem;
   }
 
+  /* Scanner Tab */
+  .scanner-controls {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr auto;
+    gap: 0.5rem;
+    margin-bottom: 1.5rem;
+    align-items: end;
+  }
+  .btn-scan {
+    padding: 0.75rem 1.5rem;
+    background: var(--card);
+    border: 1px solid var(--border);
+    color: var(--green);
+    cursor: pointer;
+    border-radius: 6px;
+    font-weight: 600;
+  }
+  .btn-scan:hover { border-color: var(--green); }
+
+  .scanner-status {
+    font-size: 12px;
+    color: var(--text-dim);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 1rem;
+  }
+  .status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--text-dim);
+  }
+  .status-dot.scanning {
+    background: var(--green);
+    animation: pulse 1.5s infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+
   @media (max-width: 768px) {
     .prob-row, .metrics { grid-template-columns: 1fr; }
     .evidence-grid { grid-template-columns: 1fr; }
     .status-row { grid-template-columns: 1fr; }
     .msg-bubble { max-width: 90%; }
     .size-row { grid-template-columns: 1fr; }
+    .scanner-controls { grid-template-columns: 1fr; }
   }
 </style>
 </head>
@@ -428,15 +471,47 @@
 
 <div class="app">
   <div class="tabs">
-    <button class="tab-btn active" onclick="switchTab('deck')">Trade Deck</button>
+    <button class="tab-btn active" onclick="switchTab('scanner')">Scanner</button>
+    <button class="tab-btn" onclick="switchTab('deck')">Trade Deck</button>
     <button class="tab-btn" onclick="switchTab('history')">History</button>
     <button class="tab-btn" onclick="switchTab('chat')">Chat</button>
   </div>
 
   <div class="content">
 
+    <!-- TAB 0: SCANNER -->
+    <div id="scanner" class="tab-content active">
+      <h2 style="margin-bottom: 1.5rem; font-size: 18px;">LMSR Opportunity Scanner</h2>
+      <p style="font-size: 13px; color: var(--text-dim); margin-bottom: 1.5rem;">
+        Scanning for mispriced contracts using LMSR edge detection. Edge = Model Price − Market Price.
+      </p>
+
+      <div class="scanner-controls">
+        <div>
+          <label style="display: block; font-size: 11px; color: var(--text-dim); margin-bottom: 0.5rem; text-transform: uppercase;">Window (hours)</label>
+          <input type="number" id="scan-hours" value="4" min="1" max="24" />
+        </div>
+        <div>
+          <label style="display: block; font-size: 11px; color: var(--text-dim); margin-bottom: 0.5rem; text-transform: uppercase;">Min edge (%)</label>
+          <input type="number" id="scan-min-edge" value="2" min="0.5" max="10" step="0.5" />
+        </div>
+        <button class="btn-scan" onclick="runScan()">SCAN</button>
+      </div>
+
+      <div class="scanner-status" id="scan-status">
+        <span class="status-dot"></span>
+        <span>Ready to scan</span>
+      </div>
+
+      <table id="scanner-table">
+        <thead><tr><th>Ticker</th><th>Market Price</th><th>Model Price</th><th>Edge %</th><th>Signal</th><th>Confidence</th><th>Score</th></tr></thead>
+        <tbody id="scanner-body"><tr><td colspan="7" style="text-align: center; color: var(--text-dim); padding: 2rem;">Click SCAN to find opportunities</td></tr></tbody>
+      </table>
+    </div>
+
     <!-- TAB 1: TRADE DECK -->
-    <div id="deck" class="tab-content active">
+    <div id="deck" class="tab-content">
+      <h2 style="margin-bottom: 1.5rem; font-size: 18px;">Trade Deck</h2>
       <div class="ticker-row">
         <input type="text" id="ticker-input" placeholder="e.g. KXBTCD-26MAR1900-T74999.99" />
         <button style="padding: 0.75rem 1.5rem; background: var(--card); border: 1px solid var(--border); color: var(--green); cursor: pointer; border-radius: 6px;" onclick="fetchTickerData()">FETCH</button>
@@ -625,6 +700,7 @@ function switchTab(tab) {
   document.getElementById(tab).classList.add('active');
   event.target.classList.add('active');
 
+  if (tab === 'scanner') runScan();
   if (tab === 'history') loadDBStatus();
   if (tab === 'chat' && document.getElementById('messages').children.length === 0) {
     addMessage('bot', 'Hello! I\'m your Kalshi quant analyst. Ask me about markets, probabilities, or trade sizing.');
@@ -669,20 +745,61 @@ function toggleAccordion() {
 }
 
 function extractJSON(txt) {
-  // 1. Try direct parse
   try { return JSON.parse(txt); } catch(_) {}
-  // 2. Strip markdown fences
   const stripped = txt.replace(/```json[\s\S]*?```|```[\s\S]*?```/g, s =>
     s.replace(/```json|```/g, '').trim()
   ).trim();
   try { return JSON.parse(stripped); } catch(_) {}
-  // 3. Grab first {...} block
   const m = txt.match(/\{[\s\S]*\}/);
   if (m) { try { return JSON.parse(m[0]); } catch(_) {} }
-  // 4. All failed
   throw new SyntaxError('Could not extract JSON from response');
 }
 
+// Scanner
+async function runScan() {
+  const hours = parseFloat(document.getElementById('scan-hours').value) || 4;
+  const minEdge = parseFloat(document.getElementById('scan-min-edge').value) / 100 || 0.02;
+
+  updateScanStatus('Scanning...', 'scanning');
+
+  try {
+    const r = await fetch(`${PROXY}/scan?hours=${hours}&min_edge=${minEdge}`, {
+      headers: { 'x-proxy-api-key': PKEY }
+    });
+    const data = await r.json();
+    const tbody = document.getElementById('scanner-body');
+    tbody.innerHTML = (data.opportunities || []).slice(0, 20).map(o =>
+      `<tr onclick="selectOpportunity('${o.ticker}', ${o.market_price})">
+        <td><strong>${o.ticker}</strong></td>
+        <td>${(o.market_price*100).toFixed(1)}¢</td>
+        <td>${(o.model_price*100).toFixed(1)}¢</td>
+        <td class="${o.edge > 0 ? 'edge-positive' : 'edge-negative'}">${o.edge_pct.toFixed(2)}%</td>
+        <td><span class="sig-badge ${o.signal === 'BUY' ? 'buy' : 'sell'}">${o.signal}</span></td>
+        <td>${o.confidence}</td>
+        <td>${o.score.toFixed(3)}</td>
+      </tr>`
+    ).join('') || '<tr><td colspan="7" style="text-align:center;color:var(--text-dim)">No opportunities</td></tr>';
+    updateScanStatus(`${data.count} opportunities found`, 'idle');
+  } catch(e) {
+    updateScanStatus('Scan error: ' + e.message, 'error');
+  }
+}
+
+function updateScanStatus(msg, state = 'idle') {
+  const dot = document.querySelector('.status-dot');
+  dot.className = 'status-dot' + (state === 'scanning' ? ' scanning' : '');
+  document.querySelector('.scanner-status span:last-child').textContent = msg;
+}
+
+function selectOpportunity(ticker, price) {
+  document.getElementById('ticker-input').value = ticker;
+  document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+  document.getElementById('deck').classList.add('active');
+  document.querySelectorAll('.tab-btn')[1].classList.add('active');
+}
+
+// Trade Deck
 async function fetchTickerData() {
   const ticker = document.getElementById('ticker-input').value.trim().toUpperCase();
   if (!ticker) return;
@@ -692,9 +809,6 @@ async function fetchTickerData() {
     });
     if (!r.ok) throw new Error('Ticker not found');
     const d = await r.json();
-    const m = d.market || d;
-    if (m.last_price_dollars) document.getElementById('ticker-input').value = ticker;
-    // Try to fetch stats for base rate
     try {
       const sr = await fetch(`${PROXY}/market/${encodeURIComponent(ticker)}/stats`, {
         headers: { 'x-proxy-api-key': PKEY }
@@ -780,7 +894,7 @@ function renderResults(p, modelP, bankroll, kf) {
 
   document.getElementById('verdict').textContent = p.verdict || '';
 
-  const ev = (modelP - 0.5) * 0.1; // simplified
+  const ev = (modelP - 0.5) * 0.1;
   document.getElementById('metric-ev').textContent = (ev >= 0 ? '+' : '') + (ev * 100).toFixed(1) + '%';
 
   const kelly = (bankroll && modelP > 0.5) ? (modelP * 2 - 1) * kf : 0;
@@ -796,6 +910,7 @@ function renderResults(p, modelP, bankroll, kf) {
   document.getElementById('results').classList.add('on');
 }
 
+// History
 async function loadDBStatus() {
   try {
     const r = await fetch(`${PROXY}/db/status`);
@@ -804,7 +919,6 @@ async function loadDBStatus() {
     document.getElementById('db-snapshots').textContent = d.snapshots || 0;
     document.getElementById('db-last').textContent = d.last_snapshot ? new Date(d.last_snapshot).toLocaleTimeString() : '—';
 
-    // Load movers
     const mr = await fetch(`${PROXY}/markets/movers?hours=1&min_move=0.03`, {
       headers: { 'x-proxy-api-key': PKEY }
     });
@@ -835,6 +949,7 @@ async function loadPriceHistory() {
   }
 }
 
+// Chat
 function addMessage(role, text) {
   const msg = document.createElement('div');
   msg.className = 'message ' + role;
@@ -877,9 +992,8 @@ User: ${msg}`;
   }
 }
 
-// Load history movers on page load
 window.addEventListener('load', () => {
-  loadDBStatus();
+  runScan();
 });
 </script>
 
