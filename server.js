@@ -1,31 +1,25 @@
 import express from "express";
 import axios from "axios";
-import crypto from "crypto";
 import dotenv from "dotenv";
 import rateLimit from "express-rate-limit";
 import helmet from "helmet";
 import cors from "cors";
 import morgan from "morgan";
-import { createDb, getMarketStats, getPriceHistory, getMovers, getDbStatus, scanMarkets } from "./db.js";
+import { createDb, getMarket, getMarketStats, getPriceHistory, getMovers, getDbStatus, scanMarkets } from "./db.js";
 import { KalshiPipeline } from "./pipeline.js";
 
 dotenv.config();
 
 const {
-  KALSHI_KEY,
-  KALSHI_SECRET,
   PROXY_API_KEY,
   PORT = 3000,
-  BASE_KALSHI_URL = "https://api.elections.kalshi.com/trade-api/v2"
 } = process.env;
 
-if (!KALSHI_KEY || !KALSHI_SECRET) {
-  console.error("Missing KALSHI_KEY or KALSHI_SECRET in environment.");
-  process.exit(1);
-}
+const BASE_POLY_URL = "https://clob.polymarket.com";
 
 const app = express();
-app.use(express.json());app.use(express.static("public"));
+app.use(express.json());
+app.use(express.static("public"));
 app.use(helmet());
 app.use(cors());
 app.use(morgan("combined"));
@@ -40,97 +34,88 @@ function requireProxyApiKey(req, res, next) {
   next();
 }
 
-function signRequest(method, path) {
-  const timestampMs = Date.now();
-  const timestampSeconds = Math.floor(timestampMs / 1000).toString();
-
-  // Kalshi uses RSA-PSS with SHA-256
-  // Private key must be in PEM format
-  let privateKey = KALSHI_SECRET;
-
-  // Rebuild PEM if line breaks were stripped by env variable storage
-  if (!privateKey.includes("-----BEGIN")) {
-    // Raw base64 only — wrap it
-    const body = privateKey.replace(/\s/g, "").match(/.{1,64}/g).join("\n");
-    privateKey = `-----BEGIN PRIVATE KEY-----\n${body}\n-----END PRIVATE KEY-----`;
-  } else {
-    // Has headers but line breaks may be \n literals instead of real breaks
-    privateKey = privateKey.replace(/\\n/g, "\n");
-  }
-
-  const message = timestampSeconds + method.toUpperCase() + path;
-
-  const signature = crypto.sign("sha256", Buffer.from(message), {
-    key: privateKey,
-    padding: crypto.constants.RSA_PKCS1_PSS_PADDING,
-    saltLength: crypto.constants.RSA_PSS_SALTLEN_DIGEST,
-  });
-
-  return {
-    timestamp: timestampSeconds,
-    signature: signature.toString("base64"),
-  };
+async function polyGet(path, params = {}) {
+  const resp = await axios.get(`${BASE_POLY_URL}${path}`, { params, timeout: 10000 });
+  return resp.data;
 }
 
-async function kalshiGet(path, params = {}) {
-  const fullPath = path.startsWith("/") ? path : `/${path}`;
-  const { timestamp, signature } = signRequest("GET", fullPath);
-  const url = `${BASE_KALSHI_URL}${fullPath}`;
-
-  const resp = await axios.get(url, {
-    params,
-    headers: {
-      "KALSHI-ACCESS-KEY": KALSHI_KEY,
-      "KALSHI-ACCESS-SIGNATURE": signature,
-      "KALSHI-ACCESS-TIMESTAMP": timestamp,
-    },
-    timeout: 10000,
-  });
-  return resp.data;
+// Normalize a Polymarket market object to the shape the frontend expects
+function normalizeMarket(m) {
+  const yesToken = m.tokens?.find(t => t.outcome === "Yes") || m.tokens?.[0];
+  const noToken  = m.tokens?.find(t => t.outcome === "No")  || m.tokens?.[1];
+  const price    = yesToken?.price ?? null;
+  return {
+    ticker:             m.condition_id || m.ticker,
+    condition_id:       m.condition_id,
+    title:              m.question || m.title,
+    subtitle:           m.question || m.title,
+    category:           m.tags?.[0]?.label || m.tags?.[0]?.id || "",
+    status:             (m.active && !m.closed) ? "open" : "closed",
+    close_time:         m.end_date_iso || m.close_time,
+    volume:             m.volumeClob  || m.volume  || 0,
+    liquidity:          m.liquidityClob || m.liquidity || 0,
+    floor_strike:       null,
+    last_price_dollars: price !== null ? price.toFixed(2) : null,
+    yes_ask_dollars:    price !== null ? price.toFixed(2) : null,
+    yes_bid_dollars:    price !== null ? price.toFixed(2) : null,
+    yes_token_id:       yesToken?.token_id || null,
+    no_token_id:        noToken?.token_id  || null,
+  };
 }
 
 app.get("/healthz", (req, res) => res.json({ status: "ok", ts: Date.now() }));
 
+// Browse / search markets — maps series_ticker → keyword search on Polymarket
 app.get("/markets", requireProxyApiKey, async (req, res) => {
   try {
-    const data = await kalshiGet("/markets", req.query);
-    res.json(data);
+    const params = { active: "true", closed: "false" };
+    if (req.query.series_ticker) params.q = req.query.series_ticker;
+    if (req.query.limit)         params.limit = req.query.limit;
+    if (req.query.next_cursor)   params.next_cursor = req.query.next_cursor;
+    const data = await polyGet("/markets", params);
+    const markets = (data.data || []).map(normalizeMarket);
+    res.json({ markets, next_cursor: data.next_cursor });
   } catch (err) {
     const status = err?.response?.status || 500;
-    res.status(status).json({ error: "kalshi_error", message: err?.response?.data || err?.message });
+    res.status(status).json({ error: "polymarket_error", message: err?.response?.data || err?.message });
   }
 });
 
+// Single market — fetch from Polymarket and normalize
 app.get("/market/:ticker", requireProxyApiKey, async (req, res) => {
   try {
-    const ticker = encodeURIComponent(req.params.ticker);
-    const data = await kalshiGet(`/markets/${ticker}`);
-    res.json(data);
+    const data   = await polyGet(`/markets/${encodeURIComponent(req.params.ticker)}`);
+    const market = normalizeMarket(data);
+    res.json({ market });
   } catch (err) {
     const status = err?.response?.status || 500;
-    res.status(status).json({ error: "kalshi_error", message: err?.response?.data || err?.message });
+    res.status(status).json({ error: "polymarket_error", message: err?.response?.data || err?.message });
   }
 });
 
+// Orderbook — look up YES token_id from DB, then hit Polymarket /book
 app.get("/orderbook/:ticker", requireProxyApiKey, async (req, res) => {
   try {
-    const ticker = encodeURIComponent(req.params.ticker);
-    const data = await kalshiGet(`/markets/${ticker}/orderbook`);
+    const dbMarket = getMarket(db, req.params.ticker);
+    if (!dbMarket?.yes_token_id) return res.status(404).json({ error: "token_id_not_found", message: "Market not yet indexed — wait for pipeline refresh" });
+    const data = await polyGet("/book", { token_id: dbMarket.yes_token_id });
     res.json(data);
   } catch (err) {
     const status = err?.response?.status || 500;
-    res.status(status).json({ error: "kalshi_error", message: err?.response?.data || err?.message });
+    res.status(status).json({ error: "polymarket_error", message: err?.response?.data || err?.message });
   }
 });
 
+// Trades — look up YES token_id from DB, then hit Polymarket /trades
 app.get("/trades/:ticker", requireProxyApiKey, async (req, res) => {
   try {
-    const ticker = encodeURIComponent(req.params.ticker);
-    const data = await kalshiGet(`/markets/${ticker}/trades`);
+    const dbMarket = getMarket(db, req.params.ticker);
+    if (!dbMarket?.yes_token_id) return res.status(404).json({ error: "token_id_not_found", message: "Market not yet indexed — wait for pipeline refresh" });
+    const data = await polyGet("/trades", { token_id: dbMarket.yes_token_id });
     res.json(data);
   } catch (err) {
     const status = err?.response?.status || 500;
-    res.status(status).json({ error: "kalshi_error", message: err?.response?.data || err?.message });
+    res.status(status).json({ error: "polymarket_error", message: err?.response?.data || err?.message });
   }
 });
 
@@ -204,8 +189,6 @@ app.get("/db/status", (req, res) => {
 });
 
 // ─── Claude analysis proxy ────────────────────────────────────────────────────
-// Routes Claude API calls through the backend so the API key stays server-side.
-// Falls back gracefully if ANTHROPIC_API_KEY is not set.
 
 app.post("/analyze", requireProxyApiKey, async (req, res) => {
   const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -237,7 +220,7 @@ const db       = createDb();
 const pipeline = new KalshiPipeline(db);
 
 app.listen(PORT, () => {
-  console.log(`Kalshi proxy running on port ${PORT}`);
+  console.log(`Polymarket proxy running on port ${PORT}`);
   pipeline.start().catch((err) => {
     console.error("Pipeline failed to start:", err.message);
   });
