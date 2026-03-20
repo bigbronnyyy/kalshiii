@@ -3,853 +3,751 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Kalshi LMSR Scanner</title>
+<title>Kalshi Quant Bot</title>
 <style>
-:root {
-  --bg: #0d0d0d;
-  --card: #161616;
-  --border: rgba(255,255,255,0.07);
-  --text: #e8e8ec;
-  --text2: #a0a0a8;
-  --text3: #666670;
-  --accent: #00c853;
-  --red: #ff4d4d;
-  --amber: #f5a623;
-}
-
-* { box-sizing: border-box; margin: 0; padding: 0; }
-body {
-  background: var(--bg);
-  color: var(--text);
-  font-family: system-ui, -apple-system, sans-serif;
-  min-height: 100vh;
-  font-size: 14px;
-  line-height: 1.5;
-}
-
-.container { max-width: 1200px; margin: 0 auto; padding: 1rem; }
-
-/* Tab bar */
-.tab-bar {
-  display: flex;
-  gap: 0;
-  border-bottom: 1px solid var(--border);
-  margin-bottom: 2rem;
-}
-
-.tab {
-  padding: 12px 24px;
-  background: transparent;
-  border: none;
-  color: var(--text3);
-  cursor: pointer;
-  font-size: 13px;
-  font-weight: 500;
-  transition: color 0.2s;
-  border-bottom: 2px solid transparent;
-  position: relative;
-  bottom: -1px;
-}
-
-.tab:hover { color: var(--text); }
-
-.tab.active {
-  color: var(--accent);
-  border-bottom-color: var(--accent);
-}
-
-/* Tab content */
-.tab-content { display: none; }
-.tab-content.active { display: block; }
-
-/* Cards */
-.card {
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 1.5rem;
-  margin-bottom: 1rem;
-}
-
-.card-label {
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  color: var(--text3);
-  text-transform: uppercase;
-  margin-bottom: 12px;
-  display: block;
-}
-
-/* Fields */
-.field {
-  margin-bottom: 12px;
-}
-
-.field label {
-  display: block;
-  font-size: 12px;
-  color: var(--text3);
-  margin-bottom: 6px;
-  font-weight: 500;
-}
-
-.field input,
-.field select,
-.field textarea {
-  width: 100%;
-  background: rgba(255,255,255,0.02);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  color: var(--text);
-  padding: 10px 12px;
-  font-family: inherit;
-  font-size: 14px;
-  outline: none;
-  transition: border-color 0.2s;
-}
-
-.field input:focus,
-.field select:focus,
-.field textarea:focus {
-  border-color: var(--accent);
-}
-
-/* Buttons */
-.btn {
-  padding: 11px 16px;
-  background: rgba(0,200,83,0.1);
-  border: 1px solid var(--accent);
-  border-radius: 6px;
-  color: var(--accent);
-  cursor: pointer;
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.05em;
-  transition: all 0.2s;
-  text-transform: uppercase;
-}
-
-.btn:hover {
-  background: rgba(0,200,83,0.15);
-}
-
-.btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.btn-row {
-  display: flex;
-  gap: 12px;
-  margin-top: 1rem;
-}
-
-.btn-row .btn { flex: 1; }
-
-/* Scanner table */
-.scanner-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 13px;
-  margin-top: 12px;
-}
-
-.scanner-table th {
-  text-align: left;
-  padding: 12px;
-  border-bottom: 1px solid var(--border);
-  font-weight: 600;
-  color: var(--text3);
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  position: sticky;
-  top: 0;
-  background: var(--bg);
-  z-index: 10;
-}
-
-.scanner-table td {
-  padding: 12px;
-  border-bottom: 1px solid rgba(255,255,255,0.02);
-}
-
-.scanner-table tr {
-  cursor: pointer;
-  transition: background 0.2s;
-}
-
-.scanner-table tbody tr:hover {
-  background: rgba(0,200,83,0.08);
-}
-
-.sig-badge {
-  display: inline-block;
-  padding: 4px 10px;
-  border-radius: 4px;
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-.sig-buy {
-  background: rgba(0,200,83,0.2);
-  color: var(--accent);
-  border: 1px solid rgba(0,200,83,0.4);
-}
-
-.sig-sell {
-  background: rgba(255,77,77,0.2);
-  color: var(--red);
-  border: 1px solid rgba(255,77,77,0.4);
-}
-
-.conf-high { color: var(--accent); }
-.conf-medium { color: var(--amber); }
-.conf-low { color: var(--text2); }
-
-.edge-positive { color: var(--accent); font-weight: 600; }
-.edge-negative { color: var(--red); font-weight: 600; }
-
-.scan-status {
-  font-size: 12px;
-  color: var(--text3);
-  margin-top: 8px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.status-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--text3);
-}
-
-.status-dot.scanning {
-  background: var(--amber);
-  animation: pulse 1.5s infinite;
-}
-
-.status-dot.idle { background: var(--accent); }
-.status-dot.error { background: var(--red); }
-
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.3; }
-}
-
-/* Probabilities */
-.prob-display {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
-  margin-bottom: 12px;
-}
-
-.prob-box {
-  background: rgba(255,255,255,0.02);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 12px;
-  text-align: center;
-}
-
-.prob-box-label {
-  font-size: 11px;
-  color: var(--text3);
-  margin-bottom: 6px;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-.prob-box-value {
-  font-size: 24px;
-  font-weight: 600;
-  color: var(--accent);
-}
-
-/* Results */
-.results {
-  display: none;
-}
-
-.results.on { display: block; }
-
-.verdict {
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 1.5rem;
-  margin-bottom: 1rem;
-}
-
-.verdict-text {
-  font-size: 14px;
-  line-height: 1.6;
-  color: var(--text);
-}
-
-.metrics {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
-  margin-bottom: 1rem;
-}
-
-.metric {
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 12px;
-}
-
-.metric-label {
-  font-size: 10px;
-  color: var(--text3);
-  text-transform: uppercase;
-  margin-bottom: 6px;
-  letter-spacing: 0.05em;
-}
-
-.metric-value {
-  font-size: 20px;
-  font-weight: 600;
-  color: var(--accent);
-}
-
-/* Chat */
-.chat-container {
-  display: flex;
-  flex-direction: column;
-  height: 600px;
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  overflow: hidden;
-}
-
-.chat-messages {
-  flex: 1;
-  overflow-y: auto;
-  padding: 1rem;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.chat-message {
-  display: flex;
-  gap: 10px;
-  padding: 10px 12px;
-  background: rgba(255,255,255,0.02);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-}
-
-.chat-message.user {
-  background: rgba(0,200,83,0.1);
-  border-color: rgba(0,200,83,0.2);
-}
-
-.chat-message.user .sender { color: var(--accent); }
-.chat-message.bot .sender { color: var(--text3); }
-
-.sender {
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  margin-bottom: 4px;
-}
-
-.message-text {
-  font-size: 13px;
-  color: var(--text);
-  line-height: 1.5;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-.chat-input-area {
-  padding: 1rem;
-  border-top: 1px solid var(--border);
-  display: flex;
-  gap: 10px;
-}
-
-.chat-input-area textarea {
-  flex: 1;
-  resize: none;
-  max-height: 100px;
-}
-
-.chat-input-area .btn {
-  padding: 10px 14px;
-  align-self: flex-end;
-}
-
-/* Grid layouts */
-.field-grid {
-  display: grid;
-  gap: 12px;
-  margin-bottom: 12px;
-}
-
-.field-grid.row-2 { grid-template-columns: 1fr 1fr; }
-.field-grid.row-3 { grid-template-columns: repeat(3, 1fr); }
-
-/* Loading & status */
-.loading {
-  display: none;
-  text-align: center;
-  padding: 3rem;
-}
-
-.loading.on { display: block; }
-
-.loading-bar {
-  width: 200px;
-  height: 3px;
-  background: var(--border);
-  border-radius: 2px;
-  overflow: hidden;
-  margin: 0 auto 1rem;
-}
-
-.loading-fill {
-  height: 100%;
-  background: var(--accent);
-  animation: sweep 1.8s ease-in-out infinite;
-}
-
-@keyframes sweep {
-  0% { width: 0; margin-left: 0; }
-  50% { width: 100%; margin-left: 0; }
-  51% { margin-left: 0; }
-  100% { width: 0; margin-left: 100%; }
-}
-
-.status-msg {
-  font-size: 12px;
-  color: var(--text3);
-  margin-top: 8px;
-  min-height: 18px;
-}
-
-.status-msg.error { color: var(--red); }
-
-/* Responsive */
-@media (max-width: 768px) {
-  .prob-display { grid-template-columns: 1fr; }
-  .metrics { grid-template-columns: 1fr 1fr; }
-  .field-grid.row-2,
-  .field-grid.row-3 { grid-template-columns: 1fr; }
-  .tab { padding: 10px 14px; font-size: 12px; }
-  .scanner-table { font-size: 12px; }
-  .scanner-table td, .scanner-table th { padding: 8px; }
-}
-
-@media (max-width: 480px) {
-  .metrics { grid-template-columns: 1fr; }
-  .scanner-table { font-size: 11px; }
-}
+  :root {
+    --bg: #0d0d0d;
+    --card: #161616;
+    --border: rgba(255,255,255,0.07);
+    --text: #e8e8ec;
+    --text-dim: #888894;
+    --green: #00c853;
+    --red: #ff4d4d;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: system-ui, -apple-system, sans-serif;
+    min-height: 100vh;
+  }
+  .app { display: flex; flex-direction: column; height: 100vh; }
+
+  /* Tab bar */
+  .tabs {
+    display: flex;
+    border-bottom: 1px solid var(--border);
+    background: var(--card);
+    padding: 0 1rem;
+  }
+  .tab-btn {
+    flex: 1;
+    padding: 1rem;
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    border-bottom: 3px solid transparent;
+    transition: all 0.2s;
+  }
+  .tab-btn.active {
+    color: var(--green);
+    border-bottom-color: var(--green);
+  }
+
+  .content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1.5rem;
+    max-width: 1000px;
+    margin: 0 auto;
+    width: 100%;
+  }
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
+  /* Trade Deck */
+  .ticker-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 0.5rem;
+    margin-bottom: 1.5rem;
+  }
+  input[type="text"], input[type="number"], select, textarea {
+    background: var(--card);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 0.75rem;
+    border-radius: 6px;
+    font-family: monospace;
+    font-size: 13px;
+  }
+  input:focus, select:focus, textarea:focus {
+    outline: none;
+    border-color: var(--green);
+  }
+
+  .prob-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+  }
+  .prob-box {
+    background: var(--card);
+    border: 1px solid var(--border);
+    padding: 1rem;
+    border-radius: 6px;
+  }
+  .prob-label {
+    font-size: 11px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    margin-bottom: 0.5rem;
+  }
+  .prob-val {
+    font-size: 28px;
+    font-weight: 600;
+    color: var(--green);
+  }
+
+  .accordion-btn {
+    width: 100%;
+    padding: 1rem;
+    background: var(--card);
+    border: 1px solid var(--border);
+    color: var(--text);
+    cursor: pointer;
+    border-radius: 6px;
+    text-align: left;
+    font-size: 14px;
+    font-weight: 500;
+    margin-bottom: 1rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .accordion-btn:hover { border-color: var(--green); }
+
+  .accordion-content {
+    display: none;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-top: none;
+    border-radius: 0 0 6px 6px;
+    padding: 1rem;
+    margin-bottom: 1rem;
+  }
+  .accordion-content.open { display: block; }
+
+  .evidence-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+  }
+  .evidence-section {
+    background: rgba(255,255,255,0.02);
+    padding: 1rem;
+    border-radius: 6px;
+  }
+  .evidence-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    margin-bottom: 0.75rem;
+    letter-spacing: 0.05em;
+  }
+  .evidence-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.5rem 0;
+    cursor: pointer;
+  }
+  .evidence-item:hover { color: var(--green); }
+  .ev-btn {
+    width: 24px;
+    height: 24px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-dim);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-weight: bold;
+    flex-shrink: 0;
+  }
+  .ev-btn.bull { border-color: var(--green); background: rgba(0,200,83,0.1); color: var(--green); }
+  .ev-btn.bear { border-color: var(--red); background: rgba(255,77,77,0.1); color: var(--red); }
+  .ev-label { flex: 1; font-size: 13px; }
+
+  .size-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .context-area {
+    margin-bottom: 1.5rem;
+  }
+  .context-area textarea {
+    width: 100%;
+    min-height: 80px;
+    resize: none;
+  }
+
+  .btn-analyze {
+    width: 100%;
+    padding: 1rem;
+    background: var(--green);
+    border: none;
+    color: #000;
+    border-radius: 6px;
+    font-weight: 600;
+    font-size: 14px;
+    cursor: pointer;
+    margin-bottom: 1.5rem;
+    transition: all 0.2s;
+  }
+  .btn-analyze:hover { opacity: 0.9; }
+  .btn-analyze:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .loading-bar {
+    display: none;
+    width: 100%;
+    height: 3px;
+    background: rgba(255,255,255,0.1);
+    border-radius: 2px;
+    overflow: hidden;
+    margin-bottom: 1.5rem;
+  }
+  .loading-bar.on {
+    display: block;
+  }
+  .loading-fill {
+    height: 100%;
+    background: var(--green);
+    animation: sweep 1.5s ease-in-out infinite;
+  }
+  @keyframes sweep {
+    0% { width: 0; margin-left: 0; }
+    50% { width: 100%; }
+    100% { width: 0; margin-left: 100%; }
+  }
+
+  .results {
+    display: none;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 1.5rem;
+  }
+  .results.on { display: block; }
+
+  .sig-badge {
+    display: inline-block;
+    padding: 0.5rem 1rem;
+    border-radius: 4px;
+    font-weight: 600;
+    margin-bottom: 1rem;
+    font-size: 14px;
+  }
+  .sig-badge.buy { background: rgba(0,200,83,0.15); color: var(--green); }
+  .sig-badge.sell { background: rgba(255,77,77,0.15); color: var(--red); }
+  .sig-badge.skip { background: rgba(255,255,255,0.05); color: var(--text-dim); }
+
+  .metrics {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+  }
+  .metric {
+    background: rgba(255,255,255,0.02);
+    padding: 1rem;
+    border-radius: 6px;
+    text-align: center;
+  }
+  .metric-label {
+    font-size: 11px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    margin-bottom: 0.5rem;
+  }
+  .metric-val {
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--green);
+  }
+
+  .verdict {
+    background: rgba(255,255,255,0.02);
+    padding: 1rem;
+    border-radius: 6px;
+    line-height: 1.6;
+    margin-bottom: 1rem;
+    font-size: 14px;
+  }
+
+  .detail-text {
+    background: rgba(255,255,255,0.02);
+    padding: 1rem;
+    border-radius: 6px;
+    font-size: 13px;
+    line-height: 1.6;
+    margin-bottom: 1rem;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+  }
+
+  /* History Tab */
+  .status-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 1rem;
+    margin-bottom: 2rem;
+  }
+  .status-box {
+    background: var(--card);
+    border: 1px solid var(--border);
+    padding: 1rem;
+    border-radius: 6px;
+  }
+  .status-label {
+    font-size: 11px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    margin-bottom: 0.5rem;
+  }
+  .status-val {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text);
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 2rem;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  th {
+    background: rgba(0,200,83,0.1);
+    padding: 0.75rem;
+    text-align: left;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--green);
+    border-bottom: 1px solid var(--border);
+  }
+  td {
+    padding: 0.75rem;
+    border-bottom: 1px solid var(--border);
+    font-size: 13px;
+  }
+  tr:last-child td { border-bottom: none; }
+  tr:hover { background: rgba(0,200,83,0.05); }
+
+  .table-controls {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 0.5rem;
+    margin-bottom: 1.5rem;
+    align-items: end;
+  }
+
+  /* Chat Tab */
+  .chat-container {
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - 200px);
+  }
+  .messages {
+    flex: 1;
+    overflow-y: auto;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 1rem;
+    margin-bottom: 1rem;
+  }
+  .message {
+    display: flex;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+  }
+  .message.user { justify-content: flex-end; }
+  .message.bot { justify-content: flex-start; }
+  .msg-bubble {
+    max-width: 70%;
+    padding: 0.75rem 1rem;
+    border-radius: 6px;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  .msg-bubble.user { background: var(--green); color: #000; }
+  .msg-bubble.bot { background: rgba(255,255,255,0.05); border: 1px solid var(--border); }
+
+  .chat-input-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 0.5rem;
+  }
+  .chat-input-row input { width: 100%; }
+  .btn-send {
+    padding: 0.75rem 1.5rem;
+    background: var(--green);
+    border: none;
+    color: #000;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 600;
+    transition: all 0.2s;
+  }
+  .btn-send:hover { opacity: 0.9; }
+
+  .error-msg {
+    color: var(--red);
+    font-size: 12px;
+    padding: 0.5rem;
+    background: rgba(255,77,77,0.1);
+    border: 1px solid var(--red);
+    border-radius: 4px;
+    margin-bottom: 1rem;
+  }
+
+  @media (max-width: 768px) {
+    .prob-row, .metrics { grid-template-columns: 1fr; }
+    .evidence-grid { grid-template-columns: 1fr; }
+    .status-row { grid-template-columns: 1fr; }
+    .msg-bubble { max-width: 90%; }
+    .size-row { grid-template-columns: 1fr; }
+  }
 </style>
 </head>
 <body>
 
-<div class="container">
-
-<!-- TAB BAR -->
-<div class="tab-bar">
-  <button class="tab active" onclick="switchTab('scanner')">Scanner</button>
-  <button class="tab" onclick="switchTab('analyze')">Analyze</button>
-  <button class="tab" onclick="switchTab('chat')">Chat</button>
-</div>
-
-<!-- TAB 1: SCANNER (LMSR ARBITRAGE) -->
-<div class="tab-content active" id="tab-scanner">
-
-  <div class="card">
-    <span class="card-label">LMSR Opportunity Scanner</span>
-    <p style="font-size: 12px; color: var(--text2); margin-bottom: 1rem;">
-      Scanning for mispriced contracts using Hanson's LMSR cost function.
-      Edge = Model Price − Market Price. Positive = underpriced (BUY), Negative = overpriced (SELL).
-    </p>
-
-    <div style="display: flex; gap: 12px; margin-bottom: 1rem;">
-      <div class="field" style="flex: 1; margin: 0;">
-        <label>Window (hours)</label>
-        <input type="number" id="scan-hours" value="4" min="1" max="24" />
-      </div>
-      <div class="field" style="flex: 1; margin: 0;">
-        <label>Min edge (%)</label>
-        <input type="number" id="scan-min-edge" value="2" min="0.5" max="10" step="0.5" />
-      </div>
-      <button class="btn" onclick="runScan()" style="align-self: flex-end;">SCAN NOW</button>
-    </div>
-
-    <div class="scan-status" id="scan-status">
-      <span class="status-dot idle"></span>
-      <span id="scan-status-text">Ready to scan</span>
-    </div>
+<div class="app">
+  <div class="tabs">
+    <button class="tab-btn active" onclick="switchTab('deck')">Trade Deck</button>
+    <button class="tab-btn" onclick="switchTab('history')">History</button>
+    <button class="tab-btn" onclick="switchTab('chat')">Chat</button>
   </div>
 
-  <div id="scanner-results">
-    <table class="scanner-table" id="scanner-table">
-      <thead>
-        <tr>
-          <th>Ticker</th>
-          <th>Market Price</th>
-          <th>Model Price</th>
-          <th>Edge %</th>
-          <th>Signal</th>
-          <th>Confidence</th>
-          <th>Score</th>
-          <th>Closes</th>
-        </tr>
-      </thead>
-      <tbody id="scanner-body"></tbody>
-    </table>
-  </div>
+  <div class="content">
 
-</div>
-
-<!-- TAB 2: ANALYZE -->
-<div class="tab-content" id="tab-analyze">
-
-  <!-- Ticker input -->
-  <div class="card">
-    <span class="card-label">Selected opportunity</span>
-    <div class="field-grid row-2">
-      <div class="field">
-        <label>Ticker</label>
-        <input type="text" id="ticker" placeholder="e.g. KXBTCD-26MAR1900-T74999.99" oninput="onTickerInput()" />
+    <!-- TAB 1: TRADE DECK -->
+    <div id="deck" class="tab-content active">
+      <div class="ticker-row">
+        <input type="text" id="ticker-input" placeholder="e.g. KXBTCD-26MAR1900-T74999.99" />
+        <button style="padding: 0.75rem 1.5rem; background: var(--card); border: 1px solid var(--border); color: var(--green); cursor: pointer; border-radius: 6px;" onclick="fetchTickerData()">FETCH</button>
       </div>
-      <div class="field">
-        <label>Market price (¢)</label>
-        <input type="number" id="market-price" placeholder="auto-filled" min="1" max="99" />
+
+      <div class="prob-row">
+        <div class="prob-box">
+          <div class="prob-label">Prior %</div>
+          <div class="prob-val" id="prior-val">50%</div>
+        </div>
+        <div class="prob-box">
+          <div class="prob-label">Posterior %</div>
+          <div class="prob-val" id="posterior-val">50%</div>
+        </div>
+        <div class="prob-box">
+          <div class="prob-label">Model %</div>
+          <div class="prob-val" id="model-val">50%</div>
+        </div>
+      </div>
+
+      <button class="accordion-btn" onclick="toggleAccordion()">
+        <span>Evidence (16 factors)</span>
+        <span id="acc-arrow">▶</span>
+      </button>
+      <div id="accordion" class="accordion-content">
+        <div class="evidence-grid">
+          <div class="evidence-section">
+            <div class="evidence-title">Price / Momentum</div>
+            <div class="evidence-item" onclick="toggleEvidence('m1')"><div class="ev-btn neut" id="m1">–</div><span class="ev-label">Price toward strike</span></div>
+            <div class="evidence-item" onclick="toggleEvidence('m2')"><div class="ev-btn neut" id="m2">–</div><span class="ev-label">Price away from strike</span></div>
+            <div class="evidence-item" onclick="toggleEvidence('m3')"><div class="ev-btn neut" id="m3">–</div><span class="ev-label">Within 1% of strike</span></div>
+            <div class="evidence-item" onclick="toggleEvidence('m4')"><div class="ev-btn neut" id="m4">–</div><span class="ev-label">Strong volume</span></div>
+          </div>
+          <div class="evidence-section">
+            <div class="evidence-title">Macro / Catalyst</div>
+            <div class="evidence-item" onclick="toggleEvidence('mac1')"><div class="ev-btn neut" id="mac1">–</div><span class="ev-label">Bullish catalyst</span></div>
+            <div class="evidence-item" onclick="toggleEvidence('mac2')"><div class="ev-btn neut" id="mac2">–</div><span class="ev-label">Bearish catalyst</span></div>
+            <div class="evidence-item" onclick="toggleEvidence('mac3')"><div class="ev-btn neut" id="mac3">–</div><span class="ev-label">Supply shock</span></div>
+            <div class="evidence-item" onclick="toggleEvidence('mac4')"><div class="ev-btn neut" id="mac4">–</div><span class="ev-label">Policy dampening</span></div>
+          </div>
+          <div class="evidence-section">
+            <div class="evidence-title">Market Structure</div>
+            <div class="evidence-item" onclick="toggleEvidence('s1')"><div class="ev-btn neut" id="s1">–</div><span class="ev-label">Psychological level</span></div>
+            <div class="evidence-item" onclick="toggleEvidence('s2')"><div class="ev-btn neut" id="s2">–</div><span class="ev-label">Broke above strike</span></div>
+            <div class="evidence-item" onclick="toggleEvidence('s3')"><div class="ev-btn neut" id="s3">–</div><span class="ev-label">Rejected at strike</span></div>
+            <div class="evidence-item" onclick="toggleEvidence('s4')"><div class="ev-btn neut" id="s4">–</div><span class="ev-label">Support below price</span></div>
+          </div>
+          <div class="evidence-section">
+            <div class="evidence-title">Sentiment / Timing</div>
+            <div class="evidence-item" onclick="toggleEvidence('sen1')"><div class="ev-btn neut" id="sen1">–</div><span class="ev-label">Extreme fear</span></div>
+            <div class="evidence-item" onclick="toggleEvidence('sen2')"><div class="ev-btn neut" id="sen2">–</div><span class="ev-label">Greed/neutral</span></div>
+            <div class="evidence-item" onclick="toggleEvidence('sen3')"><div class="ev-btn neut" id="sen3">–</div><span class="ev-label">Res >24h</span></div>
+            <div class="evidence-item" onclick="toggleEvidence('sen4')"><div class="ev-btn neut" id="sen4">–</div><span class="ev-label">Res <6h</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="size-row">
+        <div>
+          <label style="display: block; font-size: 11px; color: var(--text-dim); margin-bottom: 0.5rem; text-transform: uppercase;">Bankroll ($)</label>
+          <input type="number" id="bankroll" placeholder="optional" />
+        </div>
+        <div>
+          <label style="display: block; font-size: 11px; color: var(--text-dim); margin-bottom: 0.5rem; text-transform: uppercase;">Kelly Fraction</label>
+          <select id="kelly-frac">
+            <option value="0.25">0.25x — conservative</option>
+            <option value="0.5">0.5x — moderate</option>
+            <option value="1.0">1.0x — full Kelly</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="context-area">
+        <label style="display: block; font-size: 11px; color: var(--text-dim); margin-bottom: 0.5rem; text-transform: uppercase;">Context (optional)</label>
+        <textarea id="context" placeholder="Describe what you see (price, news, sentiment, etc.)"></textarea>
+      </div>
+
+      <div class="loading-bar" id="loading-bar"><div class="loading-fill"></div></div>
+      <button class="btn-analyze" id="btn-analyze" onclick="runAnalysis()">RUN ANALYSIS</button>
+      <div id="error-msg"></div>
+
+      <div class="results" id="results">
+        <div style="margin-bottom: 1.5rem;">
+          <span class="sig-badge" id="sig-badge">SKIP</span>
+        </div>
+        <div class="metrics">
+          <div class="metric">
+            <div class="metric-label">EV</div>
+            <div class="metric-val" id="metric-ev">—</div>
+          </div>
+          <div class="metric">
+            <div class="metric-label">Kelly</div>
+            <div class="metric-val" id="metric-kelly">—</div>
+          </div>
+          <div class="metric">
+            <div class="metric-label">Position</div>
+            <div class="metric-val" id="metric-pos">—</div>
+          </div>
+        </div>
+        <div class="verdict" id="verdict"></div>
+        <div class="detail-text" id="trade-plan-text"></div>
+        <div class="detail-text" id="risks-text"></div>
+        <div class="detail-text" id="bottom-line-text"></div>
       </div>
     </div>
-    <div style="font-size: 11px; color: var(--text3); margin-top: 6px;" id="ticker-status"></div>
-  </div>
 
-  <!-- Probabilities -->
-  <div class="card">
-    <span class="card-label">Probability estimates</span>
-    <div class="prob-display">
-      <div class="prob-box">
-        <div class="prob-box-label">Prior %</div>
-        <div class="prob-box-value" id="prob-prior">50</div>
+    <!-- TAB 2: HISTORY -->
+    <div id="history" class="tab-content">
+      <h2 style="margin-bottom: 1.5rem; font-size: 18px;">Market Data & History</h2>
+
+      <div class="status-row">
+        <div class="status-box">
+          <div class="status-label">Markets Tracked</div>
+          <div class="status-val" id="db-markets">—</div>
+        </div>
+        <div class="status-box">
+          <div class="status-label">Snapshots Stored</div>
+          <div class="status-val" id="db-snapshots">—</div>
+        </div>
+        <div class="status-box">
+          <div class="status-label">Last Update</div>
+          <div class="status-val" id="db-last" style="font-size: 12px;">—</div>
+        </div>
       </div>
-      <div class="prob-box">
-        <div class="prob-box-label">Posterior %</div>
-        <div class="prob-box-value" id="prob-posterior">50</div>
+
+      <h3 style="margin-bottom: 1rem; font-size: 16px;">Top Movers (1h)</h3>
+      <table id="movers-table">
+        <thead><tr><th>Ticker</th><th>Title</th><th>Change</th><th>Direction</th></tr></thead>
+        <tbody id="movers-body"><tr><td colspan="4" style="text-align: center; color: var(--text-dim);">Loading...</td></tr></tbody>
+      </table>
+
+      <h3 style="margin-bottom: 1rem; font-size: 16px;">Price History (24h)</h3>
+      <div class="table-controls">
+        <input type="text" id="history-ticker" placeholder="Enter ticker..." />
+        <button style="padding: 0.75rem 1.5rem; background: var(--card); border: 1px solid var(--border); color: var(--green); cursor: pointer; border-radius: 6px;" onclick="loadPriceHistory()">LOAD</button>
       </div>
-      <div class="prob-box">
-        <div class="prob-box-label">Model %</div>
-        <div class="prob-box-value" id="prob-model">50</div>
+      <table id="history-table">
+        <thead><tr><th>Time</th><th>Price</th><th>Bid</th><th>Ask</th><th>Source</th></tr></thead>
+        <tbody id="history-body"><tr><td colspan="5" style="text-align: center; color: var(--text-dim); padding: 2rem;">Enter a ticker and click LOAD</td></tr></tbody>
+      </table>
+    </div>
+
+    <!-- TAB 3: CHAT -->
+    <div id="chat" class="tab-content">
+      <div class="chat-container">
+        <div class="messages" id="messages"></div>
+        <div class="chat-input-row">
+          <input type="text" id="chat-input" placeholder="Ask me about markets, probabilities, sizing..." onkeydown="if(event.key==='Enter')sendMessage()" />
+          <button class="btn-send" onclick="sendMessage()">SEND</button>
+        </div>
       </div>
     </div>
+
   </div>
-
-  <!-- Trade sizing -->
-  <div class="card">
-    <span class="card-label">Size the trade</span>
-    <div class="field-grid row-2">
-      <div class="field">
-        <label>Bankroll ($) optional</label>
-        <input type="number" id="bankroll" placeholder="e.g. 500" />
-      </div>
-      <div class="field">
-        <label>Kelly fraction</label>
-        <select id="kelly-frac">
-          <option value="0.25">0.25x — conservative</option>
-          <option value="0.5">0.5x — moderate</option>
-          <option value="1.0">1.0x — full Kelly</option>
-        </select>
-      </div>
-    </div>
-    <div class="field">
-      <label>Context (optional)</label>
-      <textarea id="context" rows="2" placeholder="Why do you think this is mispriced?"></textarea>
-    </div>
-  </div>
-
-  <!-- Analyze button -->
-  <div class="btn-row">
-    <button class="btn" onclick="runAnalysis()" id="run-btn">▶ Run Deep Analysis</button>
-  </div>
-  <div class="status-msg" id="status-msg"></div>
-
-  <!-- Loading -->
-  <div class="loading" id="loading">
-    <div class="loading-bar"><div class="loading-fill"></div></div>
-    <div style="font-size: 12px; color: var(--text3);">Computing...</div>
-  </div>
-
-  <!-- Results -->
-  <div class="results" id="results">
-    <div class="verdict">
-      <div class="sig-badge" id="sig-badge">—</div>
-      <div class="verdict-text" id="verdict-text"></div>
-    </div>
-    <div class="metrics" id="metrics-display"></div>
-    <div class="card">
-      <span class="card-label">Trade plan</span>
-      <div id="trade-plan" style="font-size: 13px; line-height: 1.6; color: var(--text);"></div>
-    </div>
-    <div class="card">
-      <span class="card-label">Key risks</span>
-      <div id="risks-plan" style="font-size: 13px; line-height: 1.6; color: var(--text);"></div>
-    </div>
-    <div class="card" style="border-left: 3px solid var(--amber); background: rgba(245,166,35,0.05);">
-      <div id="bottom-line" style="font-size: 13px; font-weight: 500; color: var(--amber);"></div>
-    </div>
-  </div>
-
-</div>
-
-<!-- TAB 3: CHAT -->
-<div class="tab-content" id="tab-chat">
-
-  <div class="chat-container">
-    <div class="chat-messages" id="chat-messages"></div>
-    <div class="chat-input-area">
-      <textarea id="chat-input" placeholder="Ask about LMSR, markets, probabilities..." rows="2"></textarea>
-      <button class="btn" onclick="sendMessage()">Send</button>
-    </div>
-  </div>
-
-</div>
-
 </div>
 
 <script>
 const PROXY = "https://kalshiii-production.up.railway.app";
 const PKEY = "super_random_password_12345678910";
 
-// State
-let cachedMarket = null;
-let historicalBase = 0.5;
-let fetchTimer = null;
-let scanAutoRefresh = null;
-let lastScanResult = null;
+const EVD = {
+  m1: { delta: 0.08 },
+  m2: { delta: -0.08 },
+  m3: { delta: 0 },
+  m4: { delta: 0.05 },
+  mac1: { delta: 0.07 },
+  mac2: { delta: -0.07 },
+  mac3: { delta: 0.09 },
+  mac4: { delta: -0.05 },
+  s1: { delta: -0.04 },
+  s2: { delta: 0.06 },
+  s3: { delta: -0.06 },
+  s4: { delta: 0.04 },
+  sen1: { delta: -0.05 },
+  sen2: { delta: 0.04 },
+  sen3: { delta: -0.02 },
+  sen4: { delta: 0.03 },
+};
 
-// Utility functions
+let state = {};
+let historicalBase = 0.5;
+
+function switchTab(tab) {
+  document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+  document.getElementById(tab).classList.add('active');
+  event.target.classList.add('active');
+
+  if (tab === 'history') loadDBStatus();
+  if (tab === 'chat' && document.getElementById('messages').children.length === 0) {
+    addMessage('bot', 'Hello! I\'m your Kalshi quant analyst. Ask me about markets, probabilities, or trade sizing.');
+  }
+}
+
+function toggleEvidence(id) {
+  state[id] = !state[id];
+  const btn = document.getElementById(id);
+  const cfg = EVD[id];
+  if (state[id]) {
+    btn.className = 'ev-btn ' + (cfg.delta >= 0 ? 'bull' : 'bear');
+    btn.textContent = cfg.delta >= 0 ? '↑' : '↓';
+  } else {
+    btn.className = 'ev-btn neut';
+    btn.textContent = '–';
+  }
+  updateProb();
+}
+
 function logit(p) { return Math.log(p / (1 - p)); }
 function sigmoid(x) { return 1 / (1 + Math.exp(-x)); }
 
-function switchTab(tab) {
-  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
-  event.target.classList.add('active');
-  document.getElementById(`tab-${tab}`).classList.add('active');
-
-  if (tab === 'chat') initChat();
+function updateProb() {
+  const base = historicalBase;
+  let logitP = logit(base);
+  Object.entries(state).forEach(([id, on]) => {
+    if (on) logitP += EVD[id].delta * 2.5;
+  });
+  const posterior = Math.min(0.95, Math.max(0.05, sigmoid(logitP)));
+  document.getElementById('prior-val').textContent = (base * 100).toFixed(0) + '%';
+  document.getElementById('posterior-val').textContent = (posterior * 100).toFixed(0) + '%';
+  document.getElementById('model-val').textContent = (posterior * 100).toFixed(0) + '%';
+  return posterior;
 }
 
-function updateScanStatus(msg, state = 'idle') {
-  const dot = document.querySelector('.status-dot');
-  dot.className = 'status-dot ' + state;
-  document.getElementById('scan-status-text').textContent = msg;
+function toggleAccordion() {
+  const acc = document.getElementById('accordion');
+  const arrow = document.getElementById('acc-arrow');
+  acc.classList.toggle('open');
+  arrow.textContent = acc.classList.contains('open') ? '▼' : '▶';
 }
 
-async function runScan() {
-  updateScanStatus('Scanning...', 'scanning');
-
-  const hours = parseFloat(document.getElementById('scan-hours').value) || 4;
-  const minEdge = parseFloat(document.getElementById('scan-min-edge').value) / 100 || 0.02;
-
-  try {
-    const r = await fetch(`${PROXY}/scan?hours=${hours}&min_edge=${minEdge}`, {
-      headers: { 'x-proxy-api-key': PKEY }
-    });
-    if (!r.ok) throw new Error('Scan failed');
-
-    const data = await r.json();
-    lastScanResult = data.opportunities;
-
-    renderScanner(data.opportunities);
-    updateScanStatus(`${data.count} opportunities found · Updated ${new Date(data.scan_time).toLocaleTimeString()}`, 'idle');
-
-  } catch(e) {
-    updateScanStatus('Scan error: ' + e.message, 'error');
-  }
+function extractJSON(txt) {
+  // 1. Try direct parse
+  try { return JSON.parse(txt); } catch(_) {}
+  // 2. Strip markdown fences
+  const stripped = txt.replace(/```json[\s\S]*?```|```[\s\S]*?```/g, s =>
+    s.replace(/```json|```/g, '').trim()
+  ).trim();
+  try { return JSON.parse(stripped); } catch(_) {}
+  // 3. Grab first {...} block
+  const m = txt.match(/\{[\s\S]*\}/);
+  if (m) { try { return JSON.parse(m[0]); } catch(_) {} }
+  // 4. All failed
+  throw new SyntaxError('Could not extract JSON from response');
 }
 
-function renderScanner(opportunities) {
-  const body = document.getElementById('scanner-body');
-
-  if (!opportunities.length) {
-    body.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text3);padding:2rem">No opportunities found</td></tr>';
-    return;
-  }
-
-  body.innerHTML = opportunities.map(opp => `
-    <tr onclick="selectOpportunity('${opp.ticker}', ${opp.market_price})">
-      <td><strong>${opp.ticker}</strong></td>
-      <td>${(opp.market_price*100).toFixed(1)}¢</td>
-      <td>${(opp.model_price*100).toFixed(1)}¢</td>
-      <td class="${opp.edge > 0 ? 'edge-positive' : 'edge-negative'}">
-        ${opp.edge > 0 ? '+' : ''}${opp.edge_pct.toFixed(2)}%
-      </td>
-      <td>
-        <span class="sig-badge ${opp.signal === 'BUY' ? 'sig-buy' : 'sig-sell'}">
-          ${opp.signal}
-        </span>
-      </td>
-      <td><span class="conf-${opp.confidence.toLowerCase()}">${opp.confidence}</span></td>
-      <td>${opp.score.toFixed(3)}</td>
-      <td style="font-size:11px">${new Date(opp.close_time).toLocaleDateString()}</td>
-    </tr>
-  `).join('');
-}
-
-function selectOpportunity(ticker, price) {
-  document.getElementById('ticker').value = ticker;
-  document.getElementById('market-price').value = Math.round(price * 100);
-  onTickerInput();
-
-  // Switch to analyze tab
-  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
-  document.querySelector('[onclick*="analyze"]').classList.add('active');
-  document.getElementById('tab-analyze').classList.add('active');
-}
-
-// Ticker auto-fetch
-function onTickerInput() {
-  clearTimeout(fetchTimer);
-  const q = document.getElementById('ticker').value.trim().toUpperCase();
-  if (q.length > 10 && q.includes('-') && !q.includes(' ')) {
-    document.getElementById('ticker-status').textContent = 'Fetching...';
-    fetchTimer = setTimeout(() => fetchTicker(), 800);
-  } else {
-    document.getElementById('ticker-status').textContent = '';
-    cachedMarket = null;
-  }
-}
-
-async function fetchTicker() {
-  const ticker = document.getElementById('ticker').value.trim().toUpperCase();
+async function fetchTickerData() {
+  const ticker = document.getElementById('ticker-input').value.trim().toUpperCase();
   if (!ticker) return;
-
   try {
     const r = await fetch(`${PROXY}/market/${encodeURIComponent(ticker)}`, {
       headers: { 'x-proxy-api-key': PKEY }
     });
-
-    if (!r.ok) throw new Error('Not found');
+    if (!r.ok) throw new Error('Ticker not found');
     const d = await r.json();
-    if (!d.market) throw new Error('No market data');
-
-    cachedMarket = d.market;
-
-    const raw = d.market.last_price_dollars ?? d.market.yes_ask_dollars ?? null;
-    if (raw && parseFloat(raw) > 0) {
-      document.getElementById('market-price').value = Math.round(parseFloat(raw) * 100);
-    }
-
-    document.getElementById('ticker-status').textContent = `✓ ${d.market.subtitle} — ${d.market.status}`;
-
-    // Fetch base rate
+    const m = d.market || d;
+    if (m.last_price_dollars) document.getElementById('ticker-input').value = ticker;
+    // Try to fetch stats for base rate
     try {
       const sr = await fetch(`${PROXY}/market/${encodeURIComponent(ticker)}/stats`, {
         headers: { 'x-proxy-api-key': PKEY }
       });
       if (sr.ok) {
         const stats = await sr.json();
-        if (stats && stats.avg_yes_price != null) {
+        if (stats && stats.avg_yes_price) {
           historicalBase = stats.avg_yes_price;
           updateProb();
         }
       }
     } catch(_) {}
-
   } catch(e) {
-    document.getElementById('ticker-status').textContent = '✗ ' + e.message;
-    cachedMarket = null;
+    showError('Ticker not found');
   }
 }
 
-function updateProb() {
-  const base = historicalBase;
-  const marketPrice = parseFloat(document.getElementById('market-price').value) / 100;
-  const override = parseFloat(document.getElementById('model-override').value);
-  const modelP = (!isNaN(override) && override > 0) ? override / 100 : marketPrice;
-
-  document.getElementById('prob-prior').textContent = (base * 100).toFixed(0);
-  document.getElementById('prob-posterior').textContent = (marketPrice * 100).toFixed(0);
-  document.getElementById('prob-model').textContent = (modelP * 100).toFixed(0);
-
-  return { base, modelP };
-}
-
-function setStatus(msg, error = false) {
-  const el = document.getElementById('status-msg');
+function showError(msg) {
+  const el = document.getElementById('error-msg');
   el.textContent = msg;
-  el.className = 'status-msg' + (error ? ' error' : '');
-}
-
-// Robust JSON extraction
-function extractJSON(txt) {
-  try { return JSON.parse(txt.trim()); } catch(_) {}
-  try { return JSON.parse(txt.replace(/```json|```/gi, '').trim()); } catch(_) {}
-  const match = txt.match(/\{[\s\S]*\}/);
-  if (match) { try { return JSON.parse(match[0]); } catch(_) {} }
-  try {
-    const fixed = txt
-      .replace(/```json|```/gi, '')
-      .replace(/,\s*([}\]])/g, '$1')
-      .replace(/([{,]\s*)(\w+)(\s*:)/g, '$1"$2"$3')
-      .match(/\{[\s\S]*\}/)?.[0];
-    if (fixed) return JSON.parse(fixed);
-  } catch(_) {}
-  throw new Error('Could not extract JSON from response');
+  el.className = 'error-msg';
+  setTimeout(() => { el.textContent = ''; el.className = ''; }, 5000);
 }
 
 async function runAnalysis() {
-  const ticker = document.getElementById('ticker').value.trim();
-  const priceCents = parseFloat(document.getElementById('market-price').value);
+  const ticker = document.getElementById('ticker-input').value.trim();
   const bankroll = parseFloat(document.getElementById('bankroll').value) || null;
   const kf = parseFloat(document.getElementById('kelly-frac').value);
   const ctx = document.getElementById('context').value.trim();
 
-  if (!ticker) { setStatus('Enter a ticker', true); return; }
-  if (!priceCents || isNaN(priceCents)) { setStatus('Enter market price', true); return; }
+  if (!ticker) { showError('Enter a ticker'); return; }
 
-  const { base, modelP } = updateProb();
-  const marketP = priceCents / 100;
+  const modelP = updateProb();
+  document.getElementById('loading-bar').classList.add('on');
+  document.getElementById('btn-analyze').disabled = true;
 
-  setStatus('');
-  document.getElementById('results').classList.remove('on');
-  document.getElementById('loading').classList.add('on');
-  document.getElementById('run-btn').disabled = true;
+  const prompt = `IMPORTANT: output raw JSON only, no markdown, no code fences, no explanation.
 
-  const prompt = `You are a Kalshi prediction market quant analyst using Hanson's LMSR market maker model.
-
-IMPORTANT: output raw JSON only, no markdown, no code fences, no explanation
-
-Market: ${ticker}
-Market price: ${priceCents}¢ (${(marketP*100).toFixed(1)}%)
-Model probability: ${(modelP*100).toFixed(1)}%
-Edge: ${((modelP - marketP)*100).toFixed(2)}%
-User context: ${ctx || 'none'}
+You are a Kalshi prediction market quant analyst. Analyze this market:
+MARKET: ${ticker}
+Model probability: ${(modelP * 100).toFixed(0)}%
+Context: ${ctx || 'none provided'}
+Bankroll: ${bankroll ? '$' + bankroll : 'not provided'}
 Kelly fraction: ${kf}x
-Today: March 20 2026
+Today: March 2026.
 
-Validate the LMSR-scored edge and produce a trade memo.
-
-Return exactly this JSON:
+Return JSON:
 {
   "signal": "BUY" or "SELL" or "SKIP",
   "confidence": "HIGH" or "MEDIUM" or "LOW",
-  "verdict": "2-3 sentence validation of the edge",
-  "trade_plan": "3-4 sentences on entry, confirmation, exit",
-  "risks": ["risk 1", "risk 2", "risk 3"],
+  "verdict": "1-2 sentence explanation",
+  "trade_plan": "entry, confirmation, exit plan",
+  "risks": ["risk 1", "risk 2", "key risk"],
   "bottom_line": "one sharp actionable sentence"
 }`;
 
@@ -857,87 +755,92 @@ Return exactly this JSON:
     const res = await fetch(`${PROXY}/analyze`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-proxy-api-key': PKEY },
-      body: JSON.stringify({ prompt, model: 'claude-sonnet-4-6', max_tokens: 1000 })
+      body: JSON.stringify({ prompt, model: 'claude-sonnet-4-6', max_tokens: 800 })
     });
-
     const data = await res.json();
-    if (!res.ok) throw new Error(data.message || data.error || 'Request failed');
+    if (!res.ok) throw new Error(data.message || 'API error');
 
     const txt = (data.content || []).map(b => b.text || '').join('');
     const parsed = extractJSON(txt);
 
-    renderResults(parsed, marketP, modelP, base, bankroll, kf);
-
+    renderResults(parsed, modelP, bankroll, kf);
   } catch(e) {
-    document.getElementById('loading').classList.remove('on');
-    document.getElementById('run-btn').disabled = false;
-    setStatus('Error: ' + e.message, true);
+    showError('Error: ' + e.message);
+  } finally {
+    document.getElementById('loading-bar').classList.remove('on');
+    document.getElementById('btn-analyze').disabled = false;
   }
 }
 
-function renderResults(p, marketP, modelP, base, bankroll, kf) {
-  document.getElementById('loading').classList.remove('on');
-  document.getElementById('run-btn').disabled = false;
+function renderResults(p, modelP, bankroll, kf) {
+  const sig = (p.signal || 'SKIP').toUpperCase();
+  const badge = document.getElementById('sig-badge');
+  badge.textContent = sig;
+  badge.className = 'sig-badge ' + (sig === 'BUY' ? 'buy' : sig === 'SELL' ? 'sell' : 'skip');
 
-  const sig = p.signal || 'SKIP';
-  const sigBadge = document.getElementById('sig-badge');
-  sigBadge.textContent = sig;
-  sigBadge.className = 'sig-badge ' + (sig === 'BUY' ? 'sig-buy' : sig === 'SELL' ? 'sig-sell' : '');
+  document.getElementById('verdict').textContent = p.verdict || '';
 
-  document.getElementById('verdict-text').textContent = p.verdict || '';
+  const ev = (modelP - 0.5) * 0.1; // simplified
+  document.getElementById('metric-ev').textContent = (ev >= 0 ? '+' : '') + (ev * 100).toFixed(1) + '%';
 
-  // EV & Kelly
-  const evVal = (modelP - marketP) / marketP;
-  const b = (1 - marketP) / marketP;
-  const q = 1 - modelP;
-  const fullKelly = (modelP * b - q) / b;
-  const scaledKelly = Math.max(fullKelly, 0) * kf;
+  const kelly = (bankroll && modelP > 0.5) ? (modelP * 2 - 1) * kf : 0;
+  document.getElementById('metric-kelly').textContent = (kelly * 100).toFixed(1) + '%';
 
-  let html = `
-    <div class="metric">
-      <div class="metric-label">Base rate</div>
-      <div class="metric-value">${(base*100).toFixed(0)}%</div>
-    </div>
-    <div class="metric">
-      <div class="metric-label">Model prob</div>
-      <div class="metric-value">${(modelP*100).toFixed(0)}%</div>
-    </div>
-    <div class="metric">
-      <div class="metric-label">EV</div>
-      <div class="metric-value" style="color: ${evVal > 0 ? 'var(--accent)' : evVal < 0 ? 'var(--red)' : 'var(--text2)'}">
-        ${(evVal*100).toFixed(1)}%
-      </div>
-    </div>
-  `;
-  document.getElementById('metrics-display').innerHTML = html;
+  const pos = bankroll && kelly > 0 ? '$' + Math.round(bankroll * kelly) : '—';
+  document.getElementById('metric-pos').textContent = pos;
 
-  document.getElementById('trade-plan').textContent = p.trade_plan || '—';
-  const risksHtml = (p.risks || []).map(r => `<div style="margin-bottom: 6px;">• ${r}</div>`).join('');
-  document.getElementById('risks-plan').innerHTML = risksHtml || '—';
-  document.getElementById('bottom-line').textContent = p.bottom_line || '—';
+  document.getElementById('trade-plan-text').textContent = 'Trade Plan:\n' + (p.trade_plan || '—');
+  document.getElementById('risks-text').textContent = 'Risks:\n' + (p.risks || []).join('\n');
+  document.getElementById('bottom-line-text').textContent = p.bottom_line || '';
 
   document.getElementById('results').classList.add('on');
-  document.getElementById('results').scrollIntoView({ behavior: 'smooth' });
 }
 
-// CHAT
-let messages = [];
+async function loadDBStatus() {
+  try {
+    const r = await fetch(`${PROXY}/db/status`);
+    const d = await r.json();
+    document.getElementById('db-markets').textContent = d.markets || 0;
+    document.getElementById('db-snapshots').textContent = d.snapshots || 0;
+    document.getElementById('db-last').textContent = d.last_snapshot ? new Date(d.last_snapshot).toLocaleTimeString() : '—';
 
-function initChat() {
-  if (document.getElementById('chat-messages').children.length === 0) renderChat();
+    // Load movers
+    const mr = await fetch(`${PROXY}/markets/movers?hours=1&min_move=0.03`, {
+      headers: { 'x-proxy-api-key': PKEY }
+    });
+    const movers = await mr.json();
+    const tbody = document.getElementById('movers-body');
+    tbody.innerHTML = (movers.movers || []).slice(0, 10).map(m =>
+      `<tr><td>${m.ticker}</td><td>${m.title || ''}</td><td>${(m.price_move * 100).toFixed(1)}%</td><td>${m.price_move > 0 ? '↑' : '↓'}</td></tr>`
+    ).join('') || '<tr><td colspan="4">No movers</td></tr>';
+  } catch(e) {
+    console.error('DB load error:', e);
+  }
 }
 
-function renderChat() {
-  const container = document.getElementById('chat-messages');
-  container.innerHTML = messages.map((m, i) => `
-    <div class="chat-message ${m.role}">
-      <div>
-        <div class="sender">${m.role === 'user' ? 'You' : 'Bot'}</div>
-        <div class="message-text">${escapeHtml(m.text)}</div>
-      </div>
-    </div>
-  `).join('');
-  container.scrollTop = container.scrollHeight;
+async function loadPriceHistory() {
+  const ticker = document.getElementById('history-ticker').value.trim();
+  if (!ticker) return;
+  try {
+    const r = await fetch(`${PROXY}/market/${encodeURIComponent(ticker)}/history?hours=24`, {
+      headers: { 'x-proxy-api-key': PKEY }
+    });
+    const d = await r.json();
+    const tbody = document.getElementById('history-body');
+    tbody.innerHTML = (d.history || []).map(h =>
+      `<tr><td>${new Date(h.snapshot_time).toLocaleTimeString()}</td><td>${(h.yes_price * 100).toFixed(1)}%</td><td>${(h.yes_bid * 100).toFixed(1)}%</td><td>${(h.yes_ask * 100).toFixed(1)}%</td><td>${h.source || ''}</td></tr>`
+    ).join('') || '<tr><td colspan="5">No data</td></tr>';
+  } catch(e) {
+    console.error('History load error:', e);
+  }
+}
+
+function addMessage(role, text) {
+  const msg = document.createElement('div');
+  msg.className = 'message ' + role;
+  msg.innerHTML = `<div class="msg-bubble ${role}">${escapeHtml(text)}</div>`;
+  document.getElementById('messages').appendChild(msg);
+  document.getElementById('messages').scrollTop = document.getElementById('messages').scrollHeight;
 }
 
 function escapeHtml(text) {
@@ -948,42 +851,35 @@ function escapeHtml(text) {
 
 async function sendMessage() {
   const input = document.getElementById('chat-input');
-  const text = input.value.trim();
-  if (!text) return;
+  const msg = input.value.trim();
+  if (!msg) return;
 
-  messages.push({ role: 'user', text });
+  addMessage('user', msg);
   input.value = '';
-  renderChat();
 
   try {
-    const prompt = `You are a Kalshi prediction market quant analyst specializing in LMSR market maker behavior and edge detection. The user will ask you questions about markets, probabilities, LMSR, strategies, and trade sizing. Answer concisely and accurately. Today: March 20 2026.
+    const prompt = `You are a Kalshi prediction market quant analyst. The user will ask you questions about markets, probabilities, strategies, and trade sizing. Answer concisely and accurately. Today: March 2026.
 
-User: ${text}`;
+User: ${msg}`;
 
     const res = await fetch(`${PROXY}/analyze`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-proxy-api-key': PKEY },
       body: JSON.stringify({ prompt, model: 'claude-sonnet-4-6', max_tokens: 500 })
     });
-
-    if (!res.ok) throw new Error('Request failed');
     const data = await res.json();
-    const reply = (data.content || []).map(b => b.text || '').join('').trim();
+    if (!res.ok) throw new Error(data.message || 'Error');
 
-    messages.push({ role: 'bot', text: reply });
-    renderChat();
-
+    const txt = (data.content || []).map(b => b.text || '').join('');
+    addMessage('bot', txt);
   } catch(e) {
-    messages.push({ role: 'bot', text: `Error: ${e.message}` });
-    renderChat();
+    addMessage('bot', '❌ Error: ' + e.message);
   }
 }
 
-// Initialize
+// Load history movers on page load
 window.addEventListener('load', () => {
-  runScan();
-  // Auto-refresh every 30 seconds
-  setInterval(runScan, 30000);
+  loadDBStatus();
 });
 </script>
 
