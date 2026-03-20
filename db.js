@@ -112,10 +112,14 @@ export function upsertMarket(db, market) {
   });
 }
 
-export function getActiveMarkets(db) {
+export function getActiveMarkets(db, limit = 2000) {
   return db.prepare(`
-    SELECT ticker, yes_token_id, no_token_id FROM markets WHERE status = 'open'
-  `).all();
+    SELECT ticker, yes_token_id, no_token_id
+    FROM markets
+    WHERE status = 'open' AND yes_token_id IS NOT NULL
+    ORDER BY liquidity DESC, volume DESC
+    LIMIT ?
+  `).all(limit);
 }
 
 export function getMarket(db, ticker) {
@@ -211,27 +215,38 @@ export function getMarketStats(db, ticker, hours = 24) {
 export function getMovers(db, hours = 1, minMove = 0.05) {
   const cutoff = new Date(Date.now() - hours * 3600 * 1000).toISOString();
   return db.prepare(`
-    WITH window AS (
-      SELECT
-        ticker,
-        MIN(yes_price) as min_p,
-        MAX(yes_price) as max_p,
-        FIRST_VALUE(yes_price) OVER (PARTITION BY ticker ORDER BY snapshot_time ASC) as first_p,
-        LAST_VALUE(yes_price)  OVER (PARTITION BY ticker ORDER BY snapshot_time ASC
-          ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) as last_p
+    WITH bounds AS (
+      SELECT ticker,
+             MIN(snapshot_time) AS first_t,
+             MAX(snapshot_time) AS last_t
       FROM price_snapshots
       WHERE snapshot_time > ? AND yes_price IS NOT NULL
       GROUP BY ticker
+    ),
+    first_snaps AS (
+      SELECT b.ticker, p.yes_price AS first_p
+      FROM bounds b
+      JOIN price_snapshots p
+        ON p.ticker = b.ticker AND p.snapshot_time = b.first_t
+      WHERE p.yes_price IS NOT NULL
+    ),
+    last_snaps AS (
+      SELECT b.ticker, p.yes_price AS last_p
+      FROM bounds b
+      JOIN price_snapshots p
+        ON p.ticker = b.ticker AND p.snapshot_time = b.last_t
+      WHERE p.yes_price IS NOT NULL
     )
     SELECT
-      w.ticker,
+      f.ticker,
       m.title,
-      w.first_p,
-      w.last_p,
-      ABS(w.last_p - w.first_p) as price_move
-    FROM window w
-    JOIN markets m ON w.ticker = m.ticker
-    WHERE ABS(w.last_p - w.first_p) >= ?
+      f.first_p,
+      l.last_p,
+      ABS(l.last_p - f.first_p) AS price_move
+    FROM first_snaps f
+    JOIN last_snaps  l ON f.ticker = l.ticker
+    JOIN markets     m ON f.ticker = m.ticker
+    WHERE ABS(l.last_p - f.first_p) >= ?
     ORDER BY price_move DESC
     LIMIT 20
   `).all(cutoff, minMove);

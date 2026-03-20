@@ -24,7 +24,7 @@ app.use(helmet());
 app.use(cors());
 app.use(morgan("combined"));
 
-const limiter = rateLimit({ windowMs: 10000, max: 30 });
+const limiter = rateLimit({ windowMs: 60000, max: 200 });
 app.use(limiter);
 
 function requireProxyApiKey(req, res, next) {

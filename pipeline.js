@@ -8,7 +8,6 @@
  */
 
 import WebSocket from "ws";
-import cron from "node-cron";
 import axios from "axios";
 import { upsertMarket, recordSnapshot, recordTrade, getActiveMarkets } from "./db.js";
 
@@ -56,37 +55,40 @@ async function fetchAndStoreMarkets(db, logger) {
 
 async function snapshotTicker(db, conditionId, yesTokenId, logger) {
   try {
-    const [priceData, bookData] = await Promise.all([
-      polyGet("/prices", { token_id: yesTokenId }),
-      polyGet("/book",   { token_id: yesTokenId }),
-    ]);
-
-    const yesPrice = parseFloat(priceData.price) || null;
+    const bookData = await polyGet("/book", { token_id: yesTokenId });
 
     // Polymarket orderbook: bids sorted descending, asks ascending
-    const bids = bookData.bids || [];
-    const asks = bookData.asks || [];
-    const yesBid = bids.length ? parseFloat(bids[0].price) : null;
-    const yesAsk = asks.length ? parseFloat(asks[0].price) : null;
+    const bids    = bookData.bids || [];
+    const asks    = bookData.asks || [];
+    const yesBid  = bids.length ? parseFloat(bids[0].price) : null;
+    const yesAsk  = asks.length ? parseFloat(asks[0].price) : null;
+    // Derive mid-price from spread; fall back to whichever side is available
+    const yesPrice = (yesBid !== null && yesAsk !== null)
+      ? +((yesBid + yesAsk) / 2).toFixed(4)
+      : (yesBid ?? yesAsk ?? null);
     const noPrice = yesPrice !== null ? +(1 - yesPrice).toFixed(4) : null;
 
     recordSnapshot(db, conditionId, { yes_price: yesPrice, yes_bid: yesBid, yes_ask: yesAsk, no_price: noPrice }, "rest");
+    return true;
   } catch (err) {
     if (err?.response?.status !== 404) {
       logger(`Pipeline: snapshot error for ${conditionId} — ${err.message}`);
     }
+    return false;
   }
 }
 
 async function runRestSnapshots(db, logger) {
   const markets = getActiveMarkets(db);
   logger(`Pipeline: snapshotting ${markets.length} markets via REST`);
+  let ok = 0, errors = 0;
 
   for (const { ticker, yes_token_id } of markets) {
-    if (!yes_token_id) continue;
-    await snapshotTicker(db, ticker, yes_token_id, logger);
+    const success = await snapshotTicker(db, ticker, yes_token_id, logger);
+    if (success) ok++; else errors++;
     await new Promise((r) => setTimeout(r, 200)); // 5 req/s
   }
+  logger(`Pipeline: REST snapshot done — ok=${ok} errors=${errors}`);
 }
 
 // ─── WebSocket Client ─────────────────────────────────────────────────────────
@@ -228,7 +230,7 @@ export class KalshiPipeline {
     this.db               = db;
     this.logger           = logger;
     this.ws               = new PolymarketWebSocket(db, logger);
-    this._snapshotCron    = null;
+    this._snapshotTimer   = null;
     this._refreshInterval = null;
     this._started         = false;
   }
@@ -253,10 +255,9 @@ export class KalshiPipeline {
     await runRestSnapshots(this.db, this.logger);
 
     // Step 4: schedule REST snapshots every N seconds
-    this._snapshotCron = cron.schedule(
-      `*/${SNAPSHOT_INTERVAL_SEC} * * * * *`,
+    this._snapshotTimer = setInterval(
       () => runRestSnapshots(this.db, this.logger),
-      { scheduled: true }
+      SNAPSHOT_INTERVAL_SEC * 1000
     );
 
     // Step 5: schedule metadata refresh
@@ -279,7 +280,7 @@ export class KalshiPipeline {
   }
 
   stop() {
-    this._snapshotCron?.stop();
+    clearInterval(this._snapshotTimer);
     clearInterval(this._refreshInterval);
     this.ws.stop();
     this._started = false;
