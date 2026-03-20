@@ -423,7 +423,7 @@
   /* Scanner Tab */
   .scanner-controls {
     display: grid;
-    grid-template-columns: 1fr 1fr 1fr 1fr auto;
+    grid-template-columns: 1fr 1fr 1fr 1fr 1fr auto;
     gap: 0.5rem;
     margin-bottom: 1.5rem;
     align-items: end;
@@ -436,8 +436,15 @@
     cursor: pointer;
     border-radius: 6px;
     font-weight: 600;
+    transition: background 0.2s, color 0.2s, border-color 0.2s;
   }
   .btn-scan:hover { border-color: var(--green); }
+  .btn-scan.running {
+    background: rgba(229,57,53,0.15);
+    border-color: var(--red);
+    color: var(--red);
+  }
+  .btn-scan.running:hover { background: rgba(229,57,53,0.25); }
 
   .scanner-status {
     font-size: 12px;
@@ -452,6 +459,7 @@
     height: 8px;
     border-radius: 50%;
     background: var(--text-dim);
+    flex-shrink: 0;
   }
   .status-dot.scanning {
     background: var(--green);
@@ -462,13 +470,42 @@
     50% { opacity: 0.3; }
   }
 
+  /* Opportunity rows */
+  tr.opp-stale {
+    opacity: 0.4;
+  }
+  tr.opp-stale td { color: var(--text-dim) !important; }
+  .badge-live {
+    display: inline-block;
+    background: rgba(0,200,83,0.15);
+    color: var(--green);
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 3px;
+    letter-spacing: 0.05em;
+  }
+  .badge-stale {
+    display: inline-block;
+    background: rgba(255,255,255,0.05);
+    color: #555;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 3px;
+    letter-spacing: 0.05em;
+  }
+  .conf-high { color: var(--green); font-weight: 600; }
+  .conf-med  { color: #f0a500; font-weight: 600; }
+  .conf-low  { color: var(--text-dim); }
+
   @media (max-width: 768px) {
     .prob-row, .metrics { grid-template-columns: 1fr; }
     .evidence-grid { grid-template-columns: 1fr; }
     .status-row { grid-template-columns: 1fr; }
     .msg-bubble { max-width: 90%; }
     .size-row { grid-template-columns: 1fr; }
-    .scanner-controls { grid-template-columns: 1fr 1fr; }
+    .scanner-controls { grid-template-columns: 1fr 1fr 1fr; }
   }
 </style>
 </head>
@@ -489,8 +526,8 @@
       <h2 style="margin-bottom: 0.5rem; font-size: 18px;">Edge Scanner</h2>
       <p style="font-size: 12px; color: var(--text-dim); margin-bottom: 1.5rem;">
         Three models: <strong style="color:var(--text)">Mispricing</strong> (|p_model − p_market| &gt; threshold) ·
-        <strong style="color:var(--text)">Sizing</strong> (position = bankroll × 0.25 × |edge|) ·
-        <strong style="color:var(--text)">Reaction</strong> (post-large-trade 15m delta after top-5% trades)
+        <strong style="color:var(--text)">Sizing</strong> (position = bankroll × k × |edge|) ·
+        <strong style="color:var(--text)">Reaction</strong> (post-large-trade 15m delta)
       </p>
 
       <div class="scanner-controls">
@@ -510,26 +547,35 @@
           <label style="display: block; font-size: 11px; color: var(--text-dim); margin-bottom: 0.5rem; text-transform: uppercase;">k (safety mult)</label>
           <input type="number" id="scan-k" value="0.25" min="0.05" max="1" step="0.05" />
         </div>
-        <button class="btn-scan" onclick="runScan()">SCAN</button>
+        <div>
+          <label style="display: block; font-size: 11px; color: var(--text-dim); margin-bottom: 0.5rem; text-transform: uppercase;">Interval (sec)</label>
+          <input type="number" id="scan-interval" value="30" min="5" max="300" />
+        </div>
+        <button class="btn-scan" id="scan-toggle-btn" onclick="toggleScan()">START</button>
       </div>
 
       <div class="scanner-status" id="scan-status">
         <span class="status-dot"></span>
-        <span>Ready to scan</span>
+        <span>Ready — click START to begin continuous scanning</span>
       </div>
 
       <table id="scanner-table">
         <thead><tr>
+          <th>Status</th>
           <th>Ticker</th>
           <th>Title</th>
           <th>p_market</th>
           <th>p_model</th>
           <th>Edge %</th>
+          <th>Signal</th>
+          <th>Conf</th>
           <th>Pos Size</th>
           <th>15m Δ</th>
-          <th>Signal</th>
+          <th>Spread</th>
+          <th>First Seen</th>
+          <th>Last Active</th>
         </tr></thead>
-        <tbody id="scanner-body"><tr><td colspan="8" style="text-align: center; color: var(--text-dim); padding: 2rem;">Click SCAN to find opportunities</td></tr></tbody>
+        <tbody id="scanner-body"><tr><td colspan="13" style="text-align: center; color: var(--text-dim); padding: 2rem;">Click START to begin scanning for opportunities</td></tr></tbody>
       </table>
     </div>
 
@@ -805,70 +851,170 @@ function extractJSON(txt) {
   throw new SyntaxError('Could not extract JSON from response');
 }
 
-// Scanner
+// ── Scanner ──────────────────────────────────────────────────────────────────
+const opportunityStore = new Map(); // ticker → enriched opportunity object
+let scanLoopId       = null;
+let countdownId      = null;
+let scanNumber       = 0;
+let nextScanIn       = 0;
+
+function toggleScan() {
+  if (scanLoopId) {
+    stopScan();
+  } else {
+    startScan();
+  }
+}
+
+function startScan() {
+  const btn = document.getElementById('scan-toggle-btn');
+  btn.textContent = 'STOP';
+  btn.classList.add('running');
+  runScan(); // immediate first fire
+  const intervalSec = Math.max(5, parseInt(document.getElementById('scan-interval').value) || 30);
+  scanLoopId = setInterval(runScan, intervalSec * 1000);
+  startCountdown(intervalSec);
+}
+
+function stopScan() {
+  clearInterval(scanLoopId);
+  clearInterval(countdownId);
+  scanLoopId = null;
+  countdownId = null;
+  const btn = document.getElementById('scan-toggle-btn');
+  btn.textContent = 'START';
+  btn.classList.remove('running');
+  const active = [...opportunityStore.values()].filter(o => o.active).length;
+  const stale  = opportunityStore.size - active;
+  updateScanStatus(`Stopped after ${scanNumber} scan${scanNumber !== 1 ? 's' : ''} · ${active} active, ${stale} stale in list`, 'idle');
+}
+
+function startCountdown(totalSec) {
+  clearInterval(countdownId);
+  nextScanIn = totalSec;
+  countdownId = setInterval(() => {
+    nextScanIn--;
+    if (nextScanIn <= 0) {
+      nextScanIn = totalSec;
+    }
+    refreshStatusBar();
+  }, 1000);
+}
+
+function refreshStatusBar() {
+  if (!scanLoopId) return;
+  const active = [...opportunityStore.values()].filter(o => o.active).length;
+  const stale  = opportunityStore.size - active;
+  const countStr = `scan #${scanNumber} · ${active} active, ${stale} stale · next in ${nextScanIn}s`;
+  updateScanStatus(countStr, 'scanning');
+}
+
 async function runScan() {
   const hours    = parseFloat(document.getElementById('scan-hours').value)    || 4;
   const minEdge  = parseFloat(document.getElementById('scan-min-edge').value) / 100 || 0.06;
   const bankroll = parseFloat(document.getElementById('scan-bankroll').value) || null;
   const k        = parseFloat(document.getElementById('scan-k').value)        || 0.25;
 
-  updateScanStatus('Scanning...', 'scanning');
-
   try {
     let url = `${PROXY}/scan?hours=${hours}&min_edge=${minEdge}&k=${k}`;
     if (bankroll) url += `&bankroll=${bankroll}`;
 
-    const r = await fetch(url, { headers: { 'x-proxy-api-key': PKEY } });
+    const r    = await fetch(url, { headers: { 'x-proxy-api-key': PKEY } });
     const data = await r.json();
+    const now  = new Date().toISOString();
+    scanNumber++;
 
-    const tbody = document.getElementById('scanner-body');
-    const rows = (data.opportunities || []).slice(0, 30);
+    // Mark all existing entries stale, then update/add from fresh results
+    for (const entry of opportunityStore.values()) entry.active = false;
 
-    if (!rows.length) {
-      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-dim);padding:2rem">No opportunities found — try lowering Min Edge or expanding the window</td></tr>';
-      updateScanStatus('0 opportunities found', 'idle');
-      return;
+    for (const o of (data.opportunities || [])) {
+      if (opportunityStore.has(o.ticker)) {
+        const existing = opportunityStore.get(o.ticker);
+        Object.assign(existing, o);
+        existing.active    = true;
+        existing.lastSeen  = now;
+        existing.scanCount = (existing.scanCount || 1) + 1;
+      } else {
+        opportunityStore.set(o.ticker, { ...o, active: true, firstSeen: now, lastSeen: now, scanCount: 1 });
+      }
     }
 
-    tbody.innerHTML = rows.map(o => {
-      const edgeClass = o.edge > 0 ? 'edge-positive' : 'edge-negative';
-      const edgeSign  = o.edge > 0 ? '+' : '';
-
-      // Position size
-      const posSizeCell = o.position_size != null
-        ? `<strong>$${o.position_size.toFixed(0)}</strong>`
-        : '<span style="color:var(--text-dim)">—</span>';
-
-      // 15m delta
-      let delta15Cell = '<span style="color:var(--text-dim)">—</span>';
-      if (o.delta_15m !== null) {
-        const cls   = o.delta_15m >= 0 ? 'delta-pos' : 'delta-neg';
-        const sign  = o.delta_15m >= 0 ? '+' : '';
-        const label = o.reaction_signal ? ` <small>(${o.reaction_signal})</small>` : '';
-        delta15Cell = `<span class="${cls}">${sign}${(o.delta_15m * 100).toFixed(1)}¢${label}</span>`;
-      }
-
-      const titleShort = (o.title || o.ticker).length > 40
-        ? (o.title || o.ticker).substring(0, 40) + '…'
-        : (o.title || o.ticker);
-
-      return `<tr onclick="selectOpportunity('${o.ticker}', ${o.market_price})" title="${escapeHtml(o.title || '')}">
-        <td><strong style="font-family:monospace;font-size:11px">${o.ticker}</strong></td>
-        <td style="font-size:12px;color:var(--text-dim)">${escapeHtml(titleShort)}</td>
-        <td>${(o.market_price * 100).toFixed(1)}¢</td>
-        <td>${(o.model_price  * 100).toFixed(1)}¢</td>
-        <td class="${edgeClass}">${edgeSign}${o.edge_pct.toFixed(1)}%</td>
-        <td>${posSizeCell}</td>
-        <td>${delta15Cell}</td>
-        <td><span class="sig-badge ${o.signal === 'BUY' ? 'buy' : 'sell'}">${o.signal}</span></td>
-      </tr>`;
-    }).join('');
-
-    const bankrollNote = bankroll ? ` · bankroll $${bankroll}` : '';
-    updateScanStatus(`${data.count} opportunities · |edge| ≥ ${(data.min_edge * 100).toFixed(0)}%${bankrollNote}`, 'idle');
+    renderOpportunities();
   } catch(e) {
     updateScanStatus('Scan error: ' + e.message, 'error');
   }
+}
+
+function renderOpportunities() {
+  const all    = [...opportunityStore.values()];
+  const active = all.filter(o => o.active).sort((a, b) => Math.abs(b.edge) - Math.abs(a.edge));
+  const stale  = all.filter(o => !o.active).sort((a, b) => new Date(b.lastSeen) - new Date(a.lastSeen));
+  const rows   = [...active, ...stale];
+
+  const tbody = document.getElementById('scanner-body');
+  if (!rows.length) {
+    tbody.innerHTML = `<tr><td colspan="13" style="text-align:center;color:var(--text-dim);padding:2rem">No opportunities found yet — scanning continues…</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = rows.map(o => {
+    const isActive  = o.active;
+    const rowClass  = isActive ? '' : 'opp-stale';
+    const edgeClass = o.edge > 0 ? 'edge-positive' : 'edge-negative';
+    const edgeSign  = o.edge > 0 ? '+' : '';
+
+    const statusBadge = isActive
+      ? `<span class="badge-live">LIVE</span>`
+      : `<span class="badge-stale">STALE</span>`;
+
+    const posSizeCell = o.position_size != null
+      ? `<strong>$${o.position_size.toFixed(0)}</strong>`
+      : `<span style="color:var(--text-dim)">—</span>`;
+
+    let delta15Cell = `<span style="color:var(--text-dim)">—</span>`;
+    if (o.delta_15m != null) {
+      const cls   = o.delta_15m >= 0 ? 'delta-pos' : 'delta-neg';
+      const sign  = o.delta_15m >= 0 ? '+' : '';
+      const label = o.reaction_signal ? ` <small>(${o.reaction_signal})</small>` : '';
+      delta15Cell = `<span class="${cls}">${sign}${(o.delta_15m * 100).toFixed(1)}¢${label}</span>`;
+    }
+
+    const confClass = o.confidence === 'HIGH' ? 'conf-high' : o.confidence === 'MEDIUM' ? 'conf-med' : 'conf-low';
+    const spreadVal = o.spread != null ? `${(o.spread * 100).toFixed(1)}¢` : '—';
+
+    const titleShort = (o.title || o.ticker).length > 35
+      ? (o.title || o.ticker).substring(0, 35) + '…'
+      : (o.title || o.ticker);
+
+    const firstSeenRel = relTime(o.firstSeen);
+    const lastSeenRel  = isActive ? `<span style="color:var(--green);font-size:11px">now</span>` : relTime(o.lastSeen);
+
+    return `<tr class="${rowClass}" onclick="selectOpportunity('${o.ticker}', ${o.market_price})" title="${escapeHtml(o.title || '')}">
+      <td>${statusBadge}</td>
+      <td><strong style="font-family:monospace;font-size:11px">${o.ticker}</strong></td>
+      <td style="font-size:11px;color:var(--text-dim)">${escapeHtml(titleShort)}</td>
+      <td>${(o.market_price * 100).toFixed(1)}¢</td>
+      <td>${(o.model_price  * 100).toFixed(1)}¢</td>
+      <td class="${edgeClass}">${edgeSign}${o.edge_pct.toFixed(1)}%</td>
+      <td><span class="sig-badge ${o.signal === 'BUY' ? 'buy' : 'sell'}">${o.signal}</span></td>
+      <td class="${confClass}" style="font-size:11px">${o.confidence || '—'}</td>
+      <td>${posSizeCell}</td>
+      <td>${delta15Cell}</td>
+      <td style="font-size:11px;color:var(--text-dim)">${spreadVal}</td>
+      <td style="font-size:11px;color:var(--text-dim)">${firstSeenRel}</td>
+      <td style="font-size:11px">${lastSeenRel}</td>
+    </tr>`;
+  }).join('');
+
+  refreshStatusBar();
+}
+
+function relTime(iso) {
+  if (!iso) return '—';
+  const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  if (diff < 60)  return `${diff}s ago`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  return `${Math.floor(diff / 3600)}h ago`;
 }
 
 function updateScanStatus(msg, state = 'idle') {
@@ -1138,7 +1284,7 @@ User: ${msg}`;
 }
 
 window.addEventListener('load', () => {
-  runScan();
+  // Scanner starts only when user clicks START
 });
 </script>
 
