@@ -81,11 +81,14 @@ async function snapshotTicker(db, conditionId, yesTokenId, volume, logger) {
       const tradesData = await polyGet("/trades", { token_id: yesTokenId, limit: 50 });
       const trades = tradesData.data || tradesData || [];
       for (const t of (Array.isArray(trades) ? trades : [])) {
+        const created = t.created_at || t.created_time || null;
         recordTrade(db, {
+          // Deterministic ID so re-polling won't double-insert the same trade
+          trade_id:     created ? `${conditionId}-${created}` : null,
           ticker:       conditionId,
           price:        parseFloat(t.price),
           count:        parseFloat(t.size ?? t.count ?? 0),
-          created_time: t.created_at || t.created_time || new Date().toISOString(),
+          created_time: created || new Date().toISOString(),
           taker_side:   t.taker_side || t.side || null,
         });
       }

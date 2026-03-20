@@ -319,9 +319,13 @@ function lmsrCost(pCurrent, pTarget, b) {
  *
  * 1. Pull last 20 snapshots
  * 2. VWAP from those snapshots (volume-weighted; falls back to simple avg)
- * 3. Bid/ask imbalance = (bid - ask) / (bid + ask)
- * 4. Momentum = price_now - price_30_snapshots_ago (or oldest available)
- * 5. p_model = current_price + 0.3*momentum + 0.2*imbalance
+ * 3. Bid/ask imbalance = (bid + ask − 1) / 2
+ *      > 0  → overbid (buy pressure), < 0 → oversold (sell pressure)
+ * 4. Momentum = price_now − price_30_snapshots_ago (or oldest available)
+ * 5. p_model = current_price
+ *            + 0.30 × (vwap − current_price)   [mean-reversion toward VWAP]
+ *            + 0.30 × momentum                  [trend continuation]
+ *            + 0.20 × imbalance                 [order-book pressure]
  * 6. Clamp to [0.01, 0.99]
  */
 function computeModelPrice(db, ticker, currentPrice) {
@@ -336,29 +340,40 @@ function computeModelPrice(db, ticker, currentPrice) {
   if (!snaps.length) return Math.max(0.01, Math.min(0.99, currentPrice));
 
   // VWAP (volume-weighted avg; weight=1 if volume missing)
-  let totalPriceVol = 0, totalVol = 0;
+  let totalPV = 0, totalV = 0;
   for (const s of snaps) {
     const w = s.volume > 0 ? s.volume : 1;
-    totalPriceVol += s.yes_price * w;
-    totalVol += w;
+    totalPV += s.yes_price * w;
+    totalV += w;
   }
-  // vwap available for future use; formula uses currentPrice per spec
-  // const vwap = totalPriceVol / totalVol;
+  const vwap = totalPV / totalV;
 
-  // Momentum: current_price minus oldest of the 20 snaps (proxy for 30-snap ago)
-  const oldest = snaps[snaps.length - 1];
-  const momentum = currentPrice - oldest.yes_price;
+  // Momentum: price_now minus the price 30 snapshots ago (or oldest available in last 20)
+  const snap30 = db.prepare(`
+    SELECT yes_price FROM price_snapshots
+    WHERE ticker = ? AND yes_price IS NOT NULL
+    ORDER BY snapshot_time DESC
+    LIMIT 1 OFFSET 29
+  `).get(ticker);
+  const priceAnchor = snap30 ? snap30.yes_price : snaps[snaps.length - 1].yes_price;
+  const momentum = currentPrice - priceAnchor;
 
-  // Bid/ask imbalance from most recent snapshot that has both values
+  // Bid/ask imbalance — symmetric: positive = buy pressure, negative = sell pressure
+  // For a prediction market: if bid+ask > 1 buyers are aggressive (bullish),
+  // if bid+ask < 1 sellers are aggressive (bearish).
   let imbalance = 0;
   for (const s of snaps) {
-    if (s.yes_bid !== null && s.yes_ask !== null && (s.yes_bid + s.yes_ask) !== 0) {
-      imbalance = (s.yes_bid - s.yes_ask) / (s.yes_bid + s.yes_ask);
+    if (s.yes_bid !== null && s.yes_ask !== null) {
+      imbalance = (s.yes_bid + s.yes_ask - 1) / 2;
       break;
     }
   }
 
-  const p_model = currentPrice + (0.3 * momentum) + (0.2 * imbalance);
+  const p_model = currentPrice
+    + 0.30 * (vwap - currentPrice)  // mean-reversion toward VWAP
+    + 0.30 * momentum               // trend continuation
+    + 0.20 * imbalance;             // order-book pressure
+
   return Math.max(0.01, Math.min(0.99, p_model));
 }
 
@@ -455,7 +470,7 @@ export function getPostTradeDeltas(db, ticker, hours = 24) {
  *
  * Returns sorted by absolute edge descending.
  */
-export function scanMarkets(db, hours = 4, minEdge = 0.06, bankroll = null, k = 0.25) {
+export function scanMarkets(db, hours = 4, minEdge = 0.03, bankroll = null, k = 0.25) {
   // Get all active markets with their latest snapshot
   const markets = db.prepare(`
     SELECT

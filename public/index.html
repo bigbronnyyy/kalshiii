@@ -576,7 +576,7 @@
         </div>
         <div>
           <label style="display: block; font-size: 11px; color: var(--text-dim); margin-bottom: 0.5rem; text-transform: uppercase;">Min edge (%)</label>
-          <input type="number" id="scan-min-edge" value="6" min="1" max="20" step="0.5" />
+          <input type="number" id="scan-min-edge" value="3" min="0.5" max="20" step="0.5" />
         </div>
         <div>
           <label style="display: block; font-size: 11px; color: var(--text-dim); margin-bottom: 0.5rem; text-transform: uppercase;">Bankroll ($)</label>
@@ -1096,10 +1096,13 @@ async function browseMarkets() {
     list.innerHTML = markets.map(m => {
       const p = m.last_price_dollars ?? m.yes_ask_dollars ?? null;
       const pd = p && parseFloat(p) > 0 ? '$' + p : 'no price';
+      const closeFmt = m.close_time
+        ? new Date(m.close_time).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+        : null;
       return `<div onclick="selectMarketFromBrowse('${m.ticker}','${m.close_time||''}')" style="padding: 0.75rem 1rem; border-bottom: 1px solid var(--border); cursor: pointer; display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 0.5rem;" onmouseover="this.style.background='rgba(16,185,129,0.05)'" onmouseout="this.style.background=''">
         <div>
           <div style="font-size: 13px; color: var(--text);">${m.subtitle || m.title || m.ticker}</div>
-          <div style="font-size: 11px; color: var(--text-dim); margin-top: 2px;">${m.ticker}</div>
+          <div style="font-size: 11px; color: var(--text-dim); margin-top: 2px;">${m.ticker}${closeFmt ? ' · closes ' + closeFmt : ''}</div>
         </div>
         <div style="font-size: 13px; font-weight: 600; color: var(--green);">${pd}</div>
       </div>`;
