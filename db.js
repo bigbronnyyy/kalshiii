@@ -40,6 +40,7 @@ export function createDb(dbPath = DB_PATH) {
       yes_ask         REAL,
       no_price        REAL,
       spread          REAL,
+      volume          REAL,
       snapshot_time   TEXT NOT NULL,
       source          TEXT DEFAULT 'rest'
     );
@@ -63,6 +64,8 @@ export function createDb(dbPath = DB_PATH) {
   // Migrate existing DBs that don't have token ID columns yet
   try { db.exec("ALTER TABLE markets ADD COLUMN yes_token_id TEXT"); } catch (_) {}
   try { db.exec("ALTER TABLE markets ADD COLUMN no_token_id TEXT"); } catch (_) {}
+  // Migrate snapshots table
+  try { db.exec("ALTER TABLE price_snapshots ADD COLUMN volume REAL"); } catch (_) {}
 
   _db = db;
   return db;
@@ -114,7 +117,7 @@ export function upsertMarket(db, market) {
 
 export function getActiveMarkets(db, limit = 2000) {
   return db.prepare(`
-    SELECT ticker, yes_token_id, no_token_id
+    SELECT ticker, yes_token_id, no_token_id, volume
     FROM markets
     WHERE status = 'open' AND yes_token_id IS NOT NULL
     ORDER BY liquidity DESC, volume DESC
@@ -131,9 +134,9 @@ export function getMarket(db, ticker) {
 const _insertSnapshot = (db) =>
   db.prepare(`
     INSERT INTO price_snapshots
-      (ticker, yes_price, yes_bid, yes_ask, no_price, spread, snapshot_time, source)
+      (ticker, yes_price, yes_bid, yes_ask, no_price, spread, volume, snapshot_time, source)
     VALUES
-      (@ticker, @yes_price, @yes_bid, @yes_ask, @no_price, @spread, @snapshot_time, @source)
+      (@ticker, @yes_price, @yes_bid, @yes_ask, @no_price, @spread, @volume, @snapshot_time, @source)
   `);
 
 export function recordSnapshot(db, ticker, prices, source = "rest") {
@@ -148,6 +151,7 @@ export function recordSnapshot(db, ticker, prices, source = "rest") {
     yes_ask,
     no_price:      prices.no_price  ?? null,
     spread,
+    volume:        prices.volume    ?? null,
     snapshot_time: new Date().toISOString(),
     source,
   });
@@ -311,54 +315,51 @@ function lmsrCost(pCurrent, pTarget, b) {
 }
 
 /**
- * Compute model price from historical stats + LMSR principles.
+ * Compute model price using VWAP, bid/ask imbalance, and momentum.
  *
- * Model combines:
- *  1. Mean reversion (historical avg is an anchor)
- *  2. Trend continuation (short-term momentum)
- *  3. Volatility-adjusted confidence
- *  4. Time decay (closer to expiry → price should polarize toward 0 or 1)
+ * 1. Pull last 20 snapshots
+ * 2. VWAP from those snapshots (volume-weighted; falls back to simple avg)
+ * 3. Bid/ask imbalance = (bid - ask) / (bid + ask)
+ * 4. Momentum = price_now - price_30_snapshots_ago (or oldest available)
+ * 5. p_model = current_price + 0.3*momentum + 0.2*imbalance
+ * 6. Clamp to [0.01, 0.99]
  */
-function computeModelPrice(stats, market) {
-  const currentPrice = stats.latest_price;
-  const avgPrice = stats.avg_yes_price;
-  const trend = stats.price_change; // over the stats window
-  const vol = stats.volatility;
+function computeModelPrice(db, ticker, currentPrice) {
+  const snaps = db.prepare(`
+    SELECT yes_price, yes_bid, yes_ask, volume
+    FROM price_snapshots
+    WHERE ticker = ? AND yes_price IS NOT NULL
+    ORDER BY snapshot_time DESC
+    LIMIT 20
+  `).all(ticker);
 
-  // Mean reversion component: pull toward historical average
-  const meanRevWeight = 0.35;
-  const meanRevTarget = avgPrice;
+  if (!snaps.length) return Math.max(0.01, Math.min(0.99, currentPrice));
 
-  // Momentum component: continue recent trend (dampened)
-  const momWeight = 0.25;
-  const momTarget = Math.max(0.01, Math.min(0.99, currentPrice + trend * 0.5));
+  // VWAP (volume-weighted avg; weight=1 if volume missing)
+  let totalPriceVol = 0, totalVol = 0;
+  for (const s of snaps) {
+    const w = s.volume > 0 ? s.volume : 1;
+    totalPriceVol += s.yes_price * w;
+    totalVol += w;
+  }
+  // vwap available for future use; formula uses currentPrice per spec
+  // const vwap = totalPriceVol / totalVol;
 
-  // Market-respect component: current price reflects information we don't have
-  const mktWeight = 0.40;
-  const mktTarget = currentPrice;
+  // Momentum: current_price minus oldest of the 20 snaps (proxy for 30-snap ago)
+  const oldest = snaps[snaps.length - 1];
+  const momentum = currentPrice - oldest.yes_price;
 
-  let modelPrice = meanRevWeight * meanRevTarget + momWeight * momTarget + mktWeight * mktTarget;
-
-  // Time decay adjustment: if market is closing soon, push toward extremes
-  if (market.close_time) {
-    const hoursToClose = (new Date(market.close_time) - Date.now()) / 3.6e6;
-    if (hoursToClose > 0 && hoursToClose < 6) {
-      // Near expiry: polarize toward 0 or 1
-      const polarize = Math.max(0, 1 - hoursToClose / 6) * 0.15;
-      modelPrice = modelPrice > 0.5
-        ? modelPrice + polarize * (1 - modelPrice)
-        : modelPrice - polarize * modelPrice;
+  // Bid/ask imbalance from most recent snapshot that has both values
+  let imbalance = 0;
+  for (const s of snaps) {
+    if (s.yes_bid !== null && s.yes_ask !== null && (s.yes_bid + s.yes_ask) !== 0) {
+      imbalance = (s.yes_bid - s.yes_ask) / (s.yes_bid + s.yes_ask);
+      break;
     }
   }
 
-  // Volatility discount: high vol means less certainty in our model
-  // Shrink edge toward market price when vol is high
-  if (vol > 0.03) {
-    const volDiscount = Math.min(0.5, vol * 5);
-    modelPrice = modelPrice * (1 - volDiscount) + currentPrice * volDiscount;
-  }
-
-  return Math.max(0.01, Math.min(0.99, modelPrice));
+  const p_model = currentPrice + (0.3 * momentum) + (0.2 * imbalance);
+  return Math.max(0.01, Math.min(0.99, p_model));
 }
 
 // ─── Reaction Model ───────────────────────────────────────────────────────────
@@ -475,13 +476,16 @@ export function scanMarkets(db, hours = 4, minEdge = 0.06, bankroll = null, k = 
 
   for (const m of markets) {
     const stats = getMarketStats(db, m.ticker, hours);
-    if (!stats || stats.snapshot_count < 3) continue;
+    if (!stats || stats.snapshot_count < 10) continue; // require at least 10 snapshots
 
     const marketPrice = m.yes_price;
-    if (marketPrice <= 0.01 || marketPrice >= 0.99) continue; // Skip extreme prices
+    if (marketPrice <= 0.01 || marketPrice >= 0.99) continue; // skip extreme prices
+
+    // Skip illiquid markets with wide spreads
+    if (m.spread !== null && m.spread > 0.10) continue;
 
     const b = estimateB(m.volume, m.liquidity);
-    const modelPrice = computeModelPrice(stats, m);
+    const modelPrice = computeModelPrice(db, m.ticker, marketPrice);
     const edge = modelPrice - marketPrice;
     const absEdge = Math.abs(edge);
 
@@ -540,17 +544,40 @@ export function scanMarkets(db, hours = 4, minEdge = 0.06, bankroll = null, k = 
 // ─── Status ───────────────────────────────────────────────────────────────────
 
 export function getDbStatus(db) {
-  const markets        = db.prepare("SELECT COUNT(*) as c FROM markets").get().c;
-  const snapshots      = db.prepare("SELECT COUNT(*) as c FROM price_snapshots").get().c;
-  const trades         = db.prepare("SELECT COUNT(*) as c FROM trades").get().c;
-  const lastSnapshot   = db.prepare(
+  const markets      = db.prepare("SELECT COUNT(*) as c FROM markets").get().c;
+  const snapshots    = db.prepare("SELECT COUNT(*) as c FROM price_snapshots").get().c;
+  const trades       = db.prepare("SELECT COUNT(*) as c FROM trades").get().c;
+  const lastSnapshot = db.prepare(
     "SELECT snapshot_time FROM price_snapshots ORDER BY snapshot_time DESC LIMIT 1"
   ).get();
+
+  const marketsWith10Snaps = db.prepare(`
+    SELECT COUNT(*) as c FROM (
+      SELECT ticker FROM price_snapshots
+      GROUP BY ticker HAVING COUNT(*) >= 10
+    )
+  `).get().c;
+
+  const avgSpreadRow = db.prepare(`
+    SELECT AVG(p.spread) as avg_spread
+    FROM price_snapshots p
+    INNER JOIN markets m ON p.ticker = m.ticker
+    WHERE m.status = 'open'
+      AND p.spread IS NOT NULL
+      AND p.snapshot_time = (
+        SELECT MAX(p2.snapshot_time) FROM price_snapshots p2
+        WHERE p2.ticker = p.ticker AND p2.spread IS NOT NULL
+      )
+  `).get();
 
   return {
     markets,
     snapshots,
     trades,
-    last_snapshot: lastSnapshot?.snapshot_time ?? null,
+    last_snapshot:             lastSnapshot?.snapshot_time ?? null,
+    markets_with_10plus_snaps: marketsWith10Snaps,
+    avg_bid_ask_spread:        avgSpreadRow?.avg_spread != null
+                                 ? +avgSpreadRow.avg_spread.toFixed(4)
+                                 : null,
   };
 }
