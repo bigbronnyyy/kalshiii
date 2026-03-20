@@ -315,64 +315,44 @@ function lmsrCost(pCurrent, pTarget, b) {
 }
 
 /**
- * Compute model price using VWAP, bid/ask imbalance, and momentum.
+ * Compute model price using 4-hour stats, bid/ask imbalance, and momentum.
  *
- * 1. Pull last 20 snapshots
- * 2. VWAP from those snapshots (volume-weighted; falls back to simple avg)
- * 3. Bid/ask imbalance = (bid + ask − 1) / 2
- *      > 0  → overbid (buy pressure), < 0 → oversold (sell pressure)
- * 4. Momentum = price_now − price_30_snapshots_ago (or oldest available)
- * 5. p_model = current_price
- *            + 0.30 × (vwap − current_price)   [mean-reversion toward VWAP]
- *            + 0.30 × momentum                  [trend continuation]
- *            + 0.20 × imbalance                 [order-book pressure]
- * 6. Clamp to [0.01, 0.99]
+ * Uses the already-computed stats object (4h window) so signals are meaningful:
+ *   stats.avg_yes_price — 4h average price (mean-reversion anchor)
+ *   stats.price_change  — 4h price change  (momentum signal)
+ *
+ * Local snapshot query is only used for the short-term orderbook imbalance signal.
+ *
+ * Formula:
+ *   p_model = current_price
+ *           + 0.40 × (avg_4h − current_price)  [mean-reversion toward 4h average]
+ *           + 0.30 × price_change_4h            [4h momentum / trend continuation]
+ *           + 0.20 × imbalance                  [orderbook pressure: (bid+ask−1)/2]
+ * Clamp to [0.01, 0.99]
  */
-function computeModelPrice(db, ticker, currentPrice) {
-  const snaps = db.prepare(`
-    SELECT yes_price, yes_bid, yes_ask, volume
-    FROM price_snapshots
-    WHERE ticker = ? AND yes_price IS NOT NULL
-    ORDER BY snapshot_time DESC
-    LIMIT 20
-  `).all(ticker);
+function computeModelPrice(db, ticker, currentPrice, stats) {
+  // Mean-reversion: pull toward 4-hour average price
+  const meanRev = stats.avg_yes_price - currentPrice;
 
-  if (!snaps.length) return Math.max(0.01, Math.min(0.99, currentPrice));
+  // Momentum: 4-hour price change (already computed by getMarketStats)
+  const momentum = stats.price_change;
 
-  // VWAP (volume-weighted avg; weight=1 if volume missing)
-  let totalPV = 0, totalV = 0;
-  for (const s of snaps) {
-    const w = s.volume > 0 ? s.volume : 1;
-    totalPV += s.yes_price * w;
-    totalV += w;
-  }
-  const vwap = totalPV / totalV;
-
-  // Momentum: price_now minus the price 30 snapshots ago (or oldest available in last 20)
-  const snap30 = db.prepare(`
-    SELECT yes_price FROM price_snapshots
-    WHERE ticker = ? AND yes_price IS NOT NULL
-    ORDER BY snapshot_time DESC
-    LIMIT 1 OFFSET 29
-  `).get(ticker);
-  const priceAnchor = snap30 ? snap30.yes_price : snaps[snaps.length - 1].yes_price;
-  const momentum = currentPrice - priceAnchor;
-
-  // Bid/ask imbalance — symmetric: positive = buy pressure, negative = sell pressure
-  // For a prediction market: if bid+ask > 1 buyers are aggressive (bullish),
-  // if bid+ask < 1 sellers are aggressive (bearish).
+  // Orderbook imbalance from the most recent snapshot that has both bid and ask.
+  // (bid + ask − 1) / 2: positive = buy pressure, negative = sell pressure.
   let imbalance = 0;
-  for (const s of snaps) {
-    if (s.yes_bid !== null && s.yes_ask !== null) {
-      imbalance = (s.yes_bid + s.yes_ask - 1) / 2;
-      break;
-    }
+  const recentSnap = db.prepare(`
+    SELECT yes_bid, yes_ask FROM price_snapshots
+    WHERE ticker = ? AND yes_bid IS NOT NULL AND yes_ask IS NOT NULL
+    ORDER BY snapshot_time DESC LIMIT 1
+  `).get(ticker);
+  if (recentSnap) {
+    imbalance = (recentSnap.yes_bid + recentSnap.yes_ask - 1) / 2;
   }
 
   const p_model = currentPrice
-    + 0.30 * (vwap - currentPrice)  // mean-reversion toward VWAP
-    + 0.30 * momentum               // trend continuation
-    + 0.20 * imbalance;             // order-book pressure
+    + 0.40 * meanRev   // 4h mean-reversion
+    + 0.30 * momentum  // 4h trend continuation
+    + 0.20 * imbalance; // orderbook pressure
 
   return Math.max(0.01, Math.min(0.99, p_model));
 }
@@ -470,7 +450,7 @@ export function getPostTradeDeltas(db, ticker, hours = 24) {
  *
  * Returns sorted by absolute edge descending.
  */
-export function scanMarkets(db, hours = 4, minEdge = 0.03, bankroll = null, k = 0.25) {
+export function scanMarkets(db, hours = 4, minEdge = 0.01, bankroll = null, k = 0.25) {
   // Get all active markets with their latest snapshot
   const markets = db.prepare(`
     SELECT
@@ -496,11 +476,11 @@ export function scanMarkets(db, hours = 4, minEdge = 0.03, bankroll = null, k = 
     const marketPrice = m.yes_price;
     if (marketPrice <= 0.01 || marketPrice >= 0.99) continue; // skip extreme prices
 
-    // Skip illiquid markets with wide spreads
-    if (m.spread !== null && m.spread > 0.10) continue;
+    // Skip illiquid markets with very wide spreads
+    if (m.spread !== null && m.spread > 0.15) continue;
 
     const b = estimateB(m.volume, m.liquidity);
-    const modelPrice = computeModelPrice(db, m.ticker, marketPrice);
+    const modelPrice = computeModelPrice(db, m.ticker, marketPrice, stats);
     const edge = modelPrice - marketPrice;
     const absEdge = Math.abs(edge);
 
