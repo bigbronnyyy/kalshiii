@@ -1077,7 +1077,7 @@ function switchTab(tab) {
 
   if (tab === 'scanner') runScan();
   if (tab === 'history') loadDBStatus();
-  if (tab === 'weather') { wxLoadState(); wxFetchServerTrades(); wxRefreshAnalytics(); }
+  if (tab === 'weather') { wxLoadState(); wxFetchServerTrades(); wxRefreshAnalytics(); wxSyncAutoState(); }
   if (tab === 'chat' && document.getElementById('messages').children.length === 0) {
     addMessage('bot', 'Hello! I\'m your Polymarket quant analyst. Ask me about markets, probabilities, or trade sizing.');
   }
@@ -1698,8 +1698,8 @@ function wxExtractDailyMax(data) {
 }
 
 async function wxFetchMarkets(seriesTicker) {
-  const url = `https://api.elections.kalshi.com/trade-api/v2/markets?series_ticker=${seriesTicker}&status=open&limit=100`;
-  const r = await fetch(url);
+  const url = `${PROXY}/kalshi/markets?series_ticker=${encodeURIComponent(seriesTicker)}&status=open&limit=100`;
+  const r = await fetch(url, { headers: { 'x-proxy-api-key': PKEY } });
   if (!r.ok) throw new Error('Kalshi: ' + r.status);
   const d = await r.json();
   return d.markets || [];
@@ -1880,21 +1880,88 @@ async function wxRunScan() {
   wxScanRunning = false;
 }
 
-function wxToggleAuto() {
+async function wxToggleAuto() {
   const btn = document.getElementById('wx-auto-btn');
-  if (wxAutoInterval) {
-    clearInterval(wxAutoInterval);
-    wxAutoInterval = null;
-    btn.textContent = 'AUTO OFF';
-    btn.classList.remove('active');
-    wxLog('Auto-scan stopped');
-  } else {
-    wxAutoInterval = setInterval(() => wxRunScan(), 5 * 60 * 1000);
-    btn.textContent = 'AUTO ON (5m)';
-    btn.classList.add('active');
-    wxLog('Auto-scan enabled (every 5 minutes)');
-    wxRunScan();
+  btn.disabled = true;
+  try {
+    // Check current server state
+    const statusRes = await fetch(`${PROXY}/weather/auto`, { headers: { 'x-proxy-api-key': PKEY } });
+    const status = await statusRes.json();
+    const newEnabled = !status.auto;
+
+    const res = await fetch(`${PROXY}/weather/auto`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-proxy-api-key': PKEY },
+      body: JSON.stringify({ enabled: newEnabled })
+    });
+    const data = await res.json();
+
+    btn.textContent = data.auto ? 'AUTO ON (5m)' : 'AUTO OFF';
+    btn.classList.toggle('active', data.auto);
+    wxLog(data.message);
+
+    // Start or stop polling for server results
+    if (data.auto && !wxAutoInterval) {
+      wxAutoInterval = setInterval(wxRefreshFromServer, 30000);
+    } else if (!data.auto && wxAutoInterval) {
+      clearInterval(wxAutoInterval);
+      wxAutoInterval = null;
+    }
+  } catch(e) {
+    wxLog('Error toggling auto-scan: ' + e.message, 'wx-log-error');
+  } finally {
+    btn.disabled = false;
   }
+}
+
+async function wxRefreshFromServer() {
+  try {
+    const [stateRes, tradesRes] = await Promise.all([
+      fetch(`${PROXY}/weather/state`, { headers: { 'x-proxy-api-key': PKEY } }),
+      fetch(`${PROXY}/weather/trades`, { headers: { 'x-proxy-api-key': PKEY } })
+    ]);
+    if (!stateRes.ok || !tradesRes.ok) return;
+    const serverState = await stateRes.json();
+    const serverTrades = await tradesRes.json();
+
+    wxState.bankroll = serverState.bankroll ?? wxState.bankroll;
+    wxState.wins = serverState.wins ?? wxState.wins;
+    wxState.losses = serverState.losses ?? wxState.losses;
+    wxState.pending = serverState.pending || wxState.pending;
+    wxState.resolved = serverState.resolved || wxState.resolved;
+    wxState.totalTrades = serverState.totalTrades ?? wxState.totalTrades;
+
+    // Merge server trades into local state
+    for (const st of serverTrades) {
+      const exists = wxState.trades.find(t => t.ticker === st.ticker && t.forecastDate === st.forecastDate && t.side === st.side);
+      if (!exists) wxState.trades.push(st);
+      else if (st.resolved && !exists.resolved) {
+        Object.assign(exists, { resolved: true, won: st.won, pnl: st.pnl, actualTemp: st.actualTemp });
+      }
+    }
+
+    wxSaveState();
+    wxRenderTrades();
+    wxRefreshAnalytics();
+  } catch(e) { /* server may not be available */ }
+}
+
+async function wxSyncAutoState() {
+  try {
+    const res = await fetch(`${PROXY}/weather/auto`, { headers: { 'x-proxy-api-key': PKEY } });
+    if (!res.ok) return;
+    const data = await res.json();
+    const btn = document.getElementById('wx-auto-btn');
+    btn.textContent = data.auto ? 'AUTO ON (5m)' : 'AUTO OFF';
+    btn.classList.toggle('active', data.auto);
+    if (data.lastScan) {
+      document.getElementById('wx-scan-status').textContent = 'Last scan: ' + new Date(data.lastScan).toLocaleTimeString();
+    }
+    // Start polling if auto is on
+    if (data.auto && !wxAutoInterval) {
+      wxAutoInterval = setInterval(wxRefreshFromServer, 30000);
+    }
+  } catch(e) { /* server not available */ }
 }
 
 // ─── Simulation Engine (fixed model) ─────────────────────────────────────────

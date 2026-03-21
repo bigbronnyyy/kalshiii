@@ -7,11 +7,34 @@ import cors from "cors";
 import morgan from "morgan";
 import fs from "fs";
 import { fileURLToPath } from "url";
+import { createRequire } from "module";
 import path from "path";
 import { createDb, getMarket, getLatestPrice, getMarketStats, getPriceHistory, getMovers, getDbStatus, scanMarkets, getPostTradeDeltas } from "./db.js";
 import { KalshiPipeline } from "./pipeline.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const require = createRequire(import.meta.url);
+const weatherBot = require("./weather-bot/index.js");
+
+// ─── Weather bot server-side scanner state ────────────────────────────────────
+let wxScanInterval = null;
+let wxScanRunning = false;
+let wxLastScan = null;
+
+async function runServerScan() {
+  if (wxScanRunning) return { skipped: true, reason: "scan_already_running" };
+  wxScanRunning = true;
+  try {
+    await weatherBot.scan();
+    wxLastScan = new Date().toISOString();
+    return { success: true, timestamp: wxLastScan };
+  } catch (err) {
+    console.error("[weather-bot] scan error:", err.message);
+    return { success: false, error: err.message };
+  } finally {
+    wxScanRunning = false;
+  }
+}
 
 dotenv.config();
 
@@ -356,6 +379,35 @@ app.get("/weather/trades", requireProxyApiKey, (req, res) => {
   }
 });
 
+// ─── Weather bot server-side scan control ─────────────────────────────────────
+
+app.post("/weather/scan", requireProxyApiKey, async (req, res) => {
+  const result = await runServerScan();
+  res.json(result);
+});
+
+app.get("/weather/auto", requireProxyApiKey, (req, res) => {
+  res.json({ auto: !!wxScanInterval, scanning: wxScanRunning, lastScan: wxLastScan });
+});
+
+app.post("/weather/auto", requireProxyApiKey, (req, res) => {
+  const { enabled } = req.body;
+
+  if (enabled && !wxScanInterval) {
+    runServerScan();
+    wxScanInterval = setInterval(() => runServerScan(), 5 * 60 * 1000);
+    return res.json({ auto: true, message: "Auto-scan started (5m interval)" });
+  }
+
+  if (!enabled && wxScanInterval) {
+    clearInterval(wxScanInterval);
+    wxScanInterval = null;
+    return res.json({ auto: false, message: "Auto-scan stopped" });
+  }
+
+  res.json({ auto: !!wxScanInterval, message: "No change" });
+});
+
 // ─── Trade execution (placeholder — wallet integration required) ─────────────
 
 app.post("/trade", requireProxyApiKey, (req, res) => {
@@ -363,6 +415,22 @@ app.post("/trade", requireProxyApiKey, (req, res) => {
     status:  "not_implemented",
     message: "Wallet integration required. Connect a Polymarket API key + private key to enable order submission.",
   });
+});
+
+// ─── Kalshi API proxy (avoids browser CORS restrictions) ─────────────────────
+
+app.get("/kalshi/markets", requireProxyApiKey, async (req, res) => {
+  const { series_ticker, status = "open", limit = 100 } = req.query;
+  if (!series_ticker) return res.status(400).json({ error: "missing series_ticker" });
+  try {
+    const url = `https://api.elections.kalshi.com/trade-api/v2/markets?series_ticker=${encodeURIComponent(series_ticker)}&status=${encodeURIComponent(status)}&limit=${encodeURIComponent(limit)}`;
+    const r = await fetch(url, { headers: { "Accept": "application/json" } });
+    if (!r.ok) return res.status(r.status).json({ error: "kalshi_error", status: r.status });
+    const data = await r.json();
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: "kalshi_fetch_error", message: err.message });
+  }
 });
 
 // ─── Global error handler (must be last) ─────────────────────────────────────
