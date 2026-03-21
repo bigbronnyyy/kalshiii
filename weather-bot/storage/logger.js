@@ -2,8 +2,8 @@ const fs = require("fs");
 const path = require("path");
 const config = require("../config");
 
-function ensureDir() {
-  const dir = path.dirname(config.stateFile);
+function ensureDir(filePath) {
+  const dir = path.dirname(filePath || config.stateFile);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 }
 
@@ -32,10 +32,7 @@ function appendTrade(trade) {
 
 function appendCalibration(entry) {
   ensureDir();
-  let log = [];
-  try { if (fs.existsSync(config.calibrationFile)) log = JSON.parse(fs.readFileSync(config.calibrationFile, "utf8")); } catch (e) {}
-  log.push(entry);
-  fs.writeFileSync(config.calibrationFile, JSON.stringify(log, null, 2));
+  fs.appendFileSync(config.calibrationFile, JSON.stringify(entry) + "\n");
 }
 
 module.exports = { loadState, saveState, appendTrade, appendCalibration };

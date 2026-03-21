@@ -1543,11 +1543,18 @@ const WX_STARTING_BANK = 1000;
 
 let wxState = { bankroll: WX_STARTING_BANK, totalTrades: 0, wins: 0, losses: 0, pending: [], resolved: [], trades: [] };
 let wxAutoInterval = null;
+let wxScanRunning = false;
+
+function wxEsc(str) {
+  const d = document.createElement('div');
+  d.textContent = String(str);
+  return d.innerHTML;
+}
 
 function wxLog(msg, cls = 'wx-log-info') {
   const el = document.getElementById('wx-log');
   const ts = new Date().toLocaleTimeString();
-  el.innerHTML += `<div class="wx-log-line ${cls}">[${ts}] ${msg}</div>`;
+  el.innerHTML += `<div class="wx-log-line ${cls}">[${ts}] ${wxEsc(msg)}</div>`;
   el.scrollTop = el.scrollHeight;
 }
 
@@ -1572,11 +1579,12 @@ function wxUpdateTrades() {
     if (t.resolved) result = t.won
       ? `<span style="color: var(--green);">+$${t.pnl.toFixed(2)}</span>`
       : `<span style="color: var(--red);">-$${Math.abs(t.pnl).toFixed(2)}</span>`;
+    const sideColor = t.side==='YES'?'var(--green)':'var(--red)';
     return `<tr>
-      <td>${new Date(t.timestamp).toLocaleString()}</td>
-      <td>${t.city}</td>
-      <td>${t.bracket || t.ticker}</td>
-      <td><span style="color: ${t.side==='YES'?'var(--green)':'var(--red)'}; font-weight: 600;">${t.side}</span></td>
+      <td>${wxEsc(new Date(t.timestamp).toLocaleString())}</td>
+      <td>${wxEsc(t.city)}</td>
+      <td>${wxEsc(t.bracket || t.ticker)}</td>
+      <td><span style="color: ${sideColor}; font-weight: 600;">${wxEsc(t.side)}</span></td>
       <td>${(t.ensembleProb * 100).toFixed(0)}%</td>
       <td>${(t.marketPrice * 100).toFixed(0)}c</td>
       <td class="${edgeCls}">${(t.edge * 100).toFixed(1)}%</td>
@@ -1588,6 +1596,9 @@ function wxUpdateTrades() {
 }
 
 function wxSaveState() {
+  // Cap resolved trades to last 500 to avoid unbounded localStorage growth
+  if (wxState.trades.length > 500) wxState.trades = wxState.trades.slice(-500);
+  if (wxState.resolved.length > 500) wxState.resolved = wxState.resolved.slice(-500);
   try { localStorage.setItem('wxState', JSON.stringify(wxState)); } catch(e) {}
 }
 
@@ -1688,6 +1699,8 @@ function wxKellySize(prob, marketPrice, bankroll) {
 }
 
 async function wxRunScan() {
+  if (wxScanRunning) return;
+  wxScanRunning = true;
   const btn = document.getElementById('wx-scan-btn');
   btn.disabled = true;
   btn.textContent = 'SCANNING...';
@@ -1701,7 +1714,7 @@ async function wxRunScan() {
   wxLog('=== SCAN START ===');
 
   for (const [key, city] of Object.entries(WX_CITIES)) {
-    let cardHtml = `<div class="wx-city-card"><div class="wx-city-name">${city.name}</div>`;
+    let cardHtml = `<div class="wx-city-card"><div class="wx-city-name">${wxEsc(city.name)}</div>`;
 
     try {
       wxLog(`Fetching ensemble for ${city.name}...`);
@@ -1721,7 +1734,7 @@ async function wxRunScan() {
       const min = Math.min(...tomorrow.maxTemps);
       const max = Math.max(...tomorrow.maxTemps);
 
-      cardHtml += `<div class="wx-city-meta">${tomorrow.date} | ${tomorrow.memberCount} members</div>`;
+      cardHtml += `<div class="wx-city-meta">${wxEsc(tomorrow.date)} | ${tomorrow.memberCount} members</div>`;
       cardHtml += `<div class="wx-forecast-bar">`;
       cardHtml += `<div class="wx-temp-big" style="color: var(--green);">${mean.toFixed(0)}°F</div>`;
       cardHtml += `<div class="wx-temp-range">Range: ${min.toFixed(0)}–${max.toFixed(0)}°F<br>Std: ${std.toFixed(1)}°F</div>`;
@@ -1744,7 +1757,7 @@ async function wxRunScan() {
 
         for (const market of markets) {
           const parsed = wxParseMarket(market);
-          if (!parsed.bracketLow || !parsed.marketPrice) continue;
+          if (parsed.bracketLow == null || !parsed.marketPrice) continue;
 
           const prob = wxEnsembleProb(tomorrow.maxTemps, parsed.bracketLow, parsed.bracketHigh, parsed.type);
           const edge = prob - parsed.marketPrice;
@@ -1759,8 +1772,8 @@ async function wxRunScan() {
             const edgeColor = edge > 0 ? 'var(--green)' : 'var(--red)';
             const label = parsed.subtitle || `${parsed.bracketLow}-${parsed.bracketHigh}`;
             cardHtml += `<div class="wx-edge-row">
-              <span class="wx-edge-bracket">${label}</span>
-              <span style="color: ${edge > 0 ? 'var(--green)' : 'var(--red)'}; font-weight: 600;">${side}</span>
+              <span class="wx-edge-bracket">${wxEsc(label)}</span>
+              <span style="color: ${edge > 0 ? 'var(--green)' : 'var(--red)'}; font-weight: 600;">${wxEsc(side)}</span>
               <span>GEFS: ${(prob*100).toFixed(0)}%</span>
               <span>Mkt: ${(parsed.marketPrice*100).toFixed(0)}c</span>
               <span class="wx-edge-val" style="color: ${edgeColor};">${(Math.abs(edge)*100).toFixed(1)}%</span>
@@ -1769,7 +1782,9 @@ async function wxRunScan() {
             if (posSize > 0.5) {
               const contracts = Math.floor(posSize / tradePrice);
               const cost = +(contracts * tradePrice).toFixed(2);
-              if (contracts > 0) {
+              const dupeKey = `${city.name}|${parsed.ticker}|${tomorrow.date}|${side}`;
+              const isDupe = wxState.pending.some(t => `${t.city}|${t.ticker}|${t.forecastDate}|${t.side}` === dupeKey);
+              if (contracts > 0 && !isDupe) {
                 const trade = { timestamp: ts, city: city.name, ticker: parsed.ticker, bracket: parsed.subtitle || label, side, ensembleProb: +prob.toFixed(3), marketPrice: +parsed.marketPrice.toFixed(3), edge: +Math.abs(edge).toFixed(3), contracts, cost, forecastDate: tomorrow.date, status: 'PAPER', resolved: false };
                 wxState.trades.push(trade);
                 wxState.pending.push(trade);
@@ -1784,7 +1799,7 @@ async function wxRunScan() {
         cardHtml += `<div style="font-size: 12px; color: var(--text-dim); margin-top: 0.5rem;">No open markets found</div>`;
       }
     } catch(e) {
-      cardHtml += `<div class="wx-city-meta" style="color: var(--red);">Error: ${e.message}</div>`;
+      cardHtml += `<div class="wx-city-meta" style="color: var(--red);">Error: ${wxEsc(e.message)}</div>`;
       wxLog(`${city.name}: ${e.message}`, 'wx-log-error');
     }
 
@@ -1804,6 +1819,7 @@ async function wxRunScan() {
   btn.disabled = false;
   btn.textContent = 'SCAN NOW';
   document.getElementById('wx-scan-status').textContent = 'Last scan: ' + new Date().toLocaleTimeString();
+  wxScanRunning = false;
 }
 
 function wxToggleAuto() {

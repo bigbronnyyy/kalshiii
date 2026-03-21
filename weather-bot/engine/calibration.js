@@ -6,7 +6,8 @@ function generateReport() {
     console.log("No calibration data yet.");
     return;
   }
-  const data = JSON.parse(fs.readFileSync(config.calibrationFile, "utf8"));
+  const data = fs.readFileSync(config.calibrationFile, "utf8")
+    .trim().split("\n").filter(Boolean).map(line => JSON.parse(line));
 
   console.log(`\nCalibration Report (${data.length} observations)\n`);
 

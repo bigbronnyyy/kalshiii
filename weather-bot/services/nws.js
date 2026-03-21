@@ -25,8 +25,10 @@ async function getActualHigh(lat, lon, date) {
     if (!obsResp.ok) return null;
     const obsData = await obsResp.json();
 
+    // Use individual temperature observations to find the daily max
+    // (maxTemperatureLast24Hours is a rolling value that can span days)
     const temps = (obsData.features || [])
-      .map(f => f.properties?.maxTemperatureLast24Hours?.value)
+      .map(f => f.properties?.temperature?.value)
       .filter(t => t != null)
       .map(t => t * 9 / 5 + 32);
 
