@@ -5,8 +5,13 @@ import rateLimit from "express-rate-limit";
 import helmet from "helmet";
 import cors from "cors";
 import morgan from "morgan";
+import fs from "fs";
+import { fileURLToPath } from "url";
+import path from "path";
 import { createDb, getMarket, getLatestPrice, getMarketStats, getPriceHistory, getMovers, getDbStatus, scanMarkets, getPostTradeDeltas } from "./db.js";
 import { KalshiPipeline } from "./pipeline.js";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 dotenv.config();
 
@@ -326,6 +331,28 @@ app.post("/analyze", requireProxyApiKey, async (req, res) => {
     res.status(r.status).json(data);
   } catch (err) {
     res.status(502).json({ error: "upstream_error", message: err.message });
+  }
+});
+
+// ─── Weather bot data endpoints ──────────────────────────────────────────────
+
+app.get("/weather/state", requireProxyApiKey, (req, res) => {
+  try {
+    const file = path.join(__dirname, "weather-bot/data/bot_state.json");
+    if (!fs.existsSync(file)) return res.json({ bankroll: 1000, totalTrades: 0, wins: 0, losses: 0, pending: [], resolved: [] });
+    res.json(JSON.parse(fs.readFileSync(file, "utf8")));
+  } catch (e) {
+    res.json({ bankroll: 1000, totalTrades: 0, wins: 0, losses: 0, pending: [], resolved: [] });
+  }
+});
+
+app.get("/weather/trades", requireProxyApiKey, (req, res) => {
+  try {
+    const file = path.join(__dirname, "weather-bot/data/paper_trades.json");
+    if (!fs.existsSync(file)) return res.json([]);
+    res.json(JSON.parse(fs.readFileSync(file, "utf8")));
+  } catch (e) {
+    res.json([]);
   }
 });
 

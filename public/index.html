@@ -685,7 +685,6 @@
     <button class="tab-btn" onclick="switchTab('history')">History</button>
     <button class="tab-btn" onclick="switchTab('chat')">Chat</button>
     <button class="tab-btn" onclick="switchTab('weather')">Weather</button>
-    <button class="tab-btn" onclick="switchTab('backtest')">Backtest</button>
   </div>
 
   <div class="content">
@@ -932,87 +931,36 @@
 
     <!-- TAB 4: WEATHER -->
     <div id="weather" class="tab-content">
-      <h2 style="margin-bottom: 0.5rem; font-size: 18px;">Weather Paper Trader</h2>
-      <p style="font-size: 12px; color: var(--text-dim); margin-bottom: 1.5rem;">
-        GFS 31-member ensemble vs Kalshi weather market prices. Paper trading with Kelly criterion sizing.
-      </p>
+      <!-- Header -->
+      <div style="margin-bottom: 20px;">
+        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 4px;">
+          <span style="font-size: 11px; color: var(--green); letter-spacing: 3px; text-transform: uppercase;">Kalshi Weather</span>
+          <span style="font-size: 11px; color: var(--border);">|</span>
+          <span style="font-size: 11px; color: var(--text-dim); letter-spacing: 2px;">Live Edge Detection + Backtest</span>
+        </div>
+        <h2 style="font-size: 22px; font-weight: 700; margin: 0 0 6px 0; background: linear-gradient(135deg, #22d3ee, #818cf8); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">
+          Can NOAA Data Beat the Market?
+        </h2>
+        <p style="font-size: 12px; color: var(--text-dim); margin: 0; max-width: 640px;">
+          Live GEFS 31-member ensemble edge detection vs Kalshi weather markets.
+          <span style="color: #22d3ee;">Cyan</span> = real trades &middot;
+          <span style="color: #64748b;">Gray</span> = simulated backtest (180 days).
+        </p>
+      </div>
 
+      <!-- Scanner Controls -->
       <div class="wx-controls">
         <button class="wx-btn" id="wx-scan-btn" onclick="wxRunScan()">SCAN NOW</button>
         <button class="wx-btn" id="wx-auto-btn" onclick="wxToggleAuto()">AUTO OFF</button>
         <span style="font-size: 12px; color: var(--text-dim);" id="wx-scan-status">Ready</span>
       </div>
 
-      <div class="wx-stats-row" id="wx-stats">
-        <div class="wx-stat">
-          <div class="wx-stat-label">Bankroll</div>
-          <div class="wx-stat-val" id="wx-bankroll" style="color: var(--green);">$1,000.00</div>
-        </div>
-        <div class="wx-stat">
-          <div class="wx-stat-label">P&L</div>
-          <div class="wx-stat-val" id="wx-pnl" style="color: var(--text-dim);">$0.00</div>
-        </div>
-        <div class="wx-stat">
-          <div class="wx-stat-label">Win / Loss</div>
-          <div class="wx-stat-val" id="wx-wl" style="color: var(--text);">0 / 0</div>
-        </div>
-        <div class="wx-stat">
-          <div class="wx-stat-label">Pending</div>
-          <div class="wx-stat-val" id="wx-pending" style="color: var(--text);">0</div>
-        </div>
-      </div>
-
-      <div class="wx-city-grid" id="wx-cities">
-        <!-- Filled by JS -->
-      </div>
-
-      <h3 style="font-size: 15px; font-weight: 600; margin-bottom: 0.75rem;">Paper Trades</h3>
-      <table id="wx-trades-table">
-        <thead><tr>
-          <th>Time</th>
-          <th>City</th>
-          <th>Bracket</th>
-          <th>Side</th>
-          <th>GEFS %</th>
-          <th>Market</th>
-          <th>Edge</th>
-          <th>Contracts</th>
-          <th>Cost</th>
-          <th>Result</th>
-        </tr></thead>
-        <tbody id="wx-trades-body">
-          <tr><td colspan="10" style="text-align: center; color: var(--text-dim); padding: 2rem;">Click SCAN NOW to find weather market edges</td></tr>
-        </tbody>
-      </table>
-
-      <h3 style="font-size: 15px; font-weight: 600; margin: 1.5rem 0 0.75rem;">Scan Log</h3>
-      <div class="wx-log" id="wx-log">
-        <div class="wx-log-line wx-log-info">Weather paper trader ready. Click SCAN NOW to begin.</div>
-      </div>
-    </div>
-
-    <!-- TAB 5: BACKTEST -->
-    <div id="backtest" class="tab-content">
-      <div style="margin-bottom: 20px;">
-        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 4px;">
-          <span style="font-size: 11px; color: var(--green); letter-spacing: 3px; text-transform: uppercase;">Kalshi Weather</span>
-          <span style="font-size: 11px; color: var(--border);">|</span>
-          <span style="font-size: 11px; color: var(--text-dim); letter-spacing: 2px;">GEFS Ensemble Edge Backtest</span>
-        </div>
-        <h2 style="font-size: 22px; font-weight: 700; margin: 0 0 6px 0; background: linear-gradient(135deg, #22d3ee, #818cf8); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">
-          Can NOAA Data Beat the Market?
-        </h2>
-        <p style="font-size: 12px; color: var(--text-dim); margin: 0; max-width: 600px;">
-          Simulates 180 days of GEFS 21-member ensemble forecasts vs consumer-app-driven Kalshi market prices.
-          Uses Kelly criterion sizing with configurable aggressiveness.
-        </p>
-      </div>
-
-      <!-- Controls -->
+      <!-- Parameter Controls -->
       <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 24px; padding: 16px; background: var(--card); border-radius: var(--radius); border: 1px solid var(--border);">
         <div>
-          <label style="font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px;">Station</label>
-          <select id="bt-station" onchange="btRun()" style="display: block; width: 100%; margin-top: 4px; padding: 6px 8px; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; color: var(--text); font-size: 13px; font-family: inherit;">
+          <label style="font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px;">Station Filter</label>
+          <select id="wx-station-filter" onchange="wxRefreshAnalytics()" style="display: block; width: 100%; margin-top: 4px; padding: 6px 8px; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; color: var(--text); font-size: 13px; font-family: inherit;">
+            <option value="ALL">All Cities</option>
             <option value="KNYC">New York (Central Park)</option>
             <option value="KMDW">Chicago (Midway)</option>
             <option value="KMIA">Miami (MIA)</option>
@@ -1021,69 +969,74 @@
         </div>
         <div>
           <label style="font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px;">Min EV Threshold</label>
-          <input type="range" id="bt-min-ev" min="0" max="20" step="1" value="5" oninput="document.getElementById('bt-min-ev-val').textContent=this.value+'%'; btRun()" style="display: block; width: 100%; margin-top: 8px; accent-color: #22d3ee;">
-          <span id="bt-min-ev-val" style="font-size: 12px; color: #22d3ee;">5%</span>
+          <input type="range" id="wx-min-ev-slider" min="0" max="20" step="1" value="8" oninput="document.getElementById('wx-min-ev-val').textContent=this.value+'%'; WX_MIN_EDGE=this.value/100; wxRefreshAnalytics()" style="display: block; width: 100%; margin-top: 8px; accent-color: #22d3ee;">
+          <span id="wx-min-ev-val" style="font-size: 12px; color: #22d3ee;">8%</span>
         </div>
         <div>
           <label style="font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px;">Kelly Fraction</label>
-          <input type="range" id="bt-kelly" min="5" max="100" step="5" value="25" oninput="document.getElementById('bt-kelly-val').textContent=this.value+'%'; btRun()" style="display: block; width: 100%; margin-top: 8px; accent-color: #22d3ee;">
-          <span id="bt-kelly-val" style="font-size: 12px; color: #22d3ee;">25%</span>
+          <input type="range" id="wx-kelly-slider" min="5" max="100" step="5" value="15" oninput="document.getElementById('wx-kelly-val').textContent=this.value+'%'; WX_KELLY_FRAC=this.value/100; wxRefreshAnalytics()" style="display: block; width: 100%; margin-top: 8px; accent-color: #22d3ee;">
+          <span id="wx-kelly-val" style="font-size: 12px; color: #22d3ee;">15%</span>
         </div>
         <div>
           <label style="font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px;">Starting Bankroll</label>
-          <input type="number" id="bt-bankroll" value="1000" min="100" step="100" onchange="btRun()" style="display: block; width: 100%; margin-top: 4px; padding: 6px 8px; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; color: var(--text); font-size: 13px; font-family: inherit;">
+          <input type="number" id="wx-bankroll-input" value="1000" min="100" step="100" onchange="WX_STARTING_BANK=+this.value; wxRefreshAnalytics()" style="display: block; width: 100%; margin-top: 4px; padding: 6px 8px; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; color: var(--text); font-size: 13px; font-family: inherit;">
         </div>
       </div>
 
       <!-- KPI Cards -->
-      <div id="bt-kpis" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 24px;"></div>
+      <div id="wx-kpis" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 24px;"></div>
 
       <!-- Charts -->
       <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px;">
         <div style="background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px;">
           <div style="font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px;">Equity Curve</div>
-          <svg id="bt-equity-svg" width="100%" height="100" style="display: block;"></svg>
-          <div id="bt-equity-labels" style="display: flex; justify-content: space-between; margin-top: 6px;"></div>
+          <svg id="wx-equity-svg" width="100%" height="100" style="display: block;"></svg>
+          <div id="wx-equity-labels" style="display: flex; justify-content: space-between; margin-top: 6px;"></div>
+          <div style="display: flex; gap: 16px; margin-top: 6px; font-size: 10px;">
+            <span><span style="color: #22d3ee;">&#9679;</span> Real</span>
+            <span><span style="color: #64748b;">&#9679;</span> Simulated</span>
+          </div>
         </div>
         <div style="background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px;">
-          <div style="font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px;">GEFS Calibration Curve</div>
-          <svg id="bt-cal-svg" width="320" height="200" style="display: block; margin: 0 auto;"></svg>
-          <div style="font-size: 10px; color: var(--text-muted); text-align: center; margin-top: 4px;">Dashed = perfect calibration &middot; Dots = GEFS actual</div>
+          <div style="font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px;">GEFS Calibration</div>
+          <svg id="wx-cal-svg" width="320" height="200" style="display: block; margin: 0 auto;"></svg>
+          <div style="display: flex; gap: 16px; justify-content: center; margin-top: 6px; font-size: 10px;">
+            <span><span style="color: #22d3ee;">&#9679;</span> Real</span>
+            <span><span style="color: #64748b;">&#9679;</span> Simulated</span>
+            <span style="color: var(--text-muted);">--- Perfect</span>
+          </div>
         </div>
       </div>
+
+      <!-- City Cards -->
+      <div class="wx-city-grid" id="wx-cities"></div>
 
       <!-- Strategy Insight -->
-      <div id="bt-insight" style="background: linear-gradient(135deg, var(--card) 0%, var(--bg) 100%); border: 1px solid #1e3a5f; border-radius: var(--radius); padding: 20px; margin-bottom: 24px;"></div>
+      <div id="wx-insight" style="background: linear-gradient(135deg, var(--card) 0%, var(--bg) 100%); border: 1px solid #1e3a5f; border-radius: var(--radius); padding: 20px; margin-bottom: 24px;"></div>
 
       <!-- Trade Log -->
-      <div style="background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px;">
+      <div style="background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; margin-bottom: 24px;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
           <div style="font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px;">Trade Log</div>
-          <button id="bt-toggle-trades" onclick="btToggleTrades()" style="background: none; border: 1px solid var(--border); border-radius: 4px; color: var(--text-dim); font-size: 11px; padding: 4px 10px; cursor: pointer; font-family: inherit;">Show Trades</button>
+          <button id="wx-toggle-trades" onclick="wxToggleTrades()" style="background: none; border: 1px solid var(--border); border-radius: 4px; color: var(--text-dim); font-size: 11px; padding: 4px 10px; cursor: pointer; font-family: inherit;">Show Trades</button>
         </div>
-        <div id="bt-trades-wrap" style="display: none;">
+        <div id="wx-trades-wrap" style="display: none;">
           <div style="overflow-x: auto;">
-            <table id="bt-trades-table" style="font-size: 11px;">
+            <table style="font-size: 11px;">
               <thead><tr>
-                <th>Date</th><th>Bracket</th><th>GEFS %</th><th>Market</th><th>EV</th><th>Contracts</th><th>P&L</th><th>Bankroll</th><th></th>
+                <th>Date</th><th>City</th><th>Bracket</th><th>Side</th><th>GEFS %</th><th>Market</th><th>EV</th><th>Contracts</th><th>P&L</th><th>Bankroll</th><th></th>
               </tr></thead>
-              <tbody id="bt-trades-body"></tbody>
+              <tbody id="wx-trades-body"></tbody>
             </table>
           </div>
-          <button id="bt-load-more" onclick="btLoadMore()" style="display: none; margin: 12px auto 0; background: none; border: 1px solid var(--border); border-radius: 4px; color: var(--text-dim); font-size: 11px; padding: 6px 16px; cursor: pointer; font-family: inherit;"></button>
+          <button id="wx-load-more" onclick="wxTradeLimit+=30; wxRenderTrades()" style="display: none; margin: 12px auto 0; background: none; border: 1px solid var(--border); border-radius: 4px; color: var(--text-dim); font-size: 11px; padding: 6px 16px; cursor: pointer; font-family: inherit;"></button>
         </div>
       </div>
 
-      <!-- Footer -->
-      <div style="margin-top: 24px; padding: 16px 0; border-top: 1px solid var(--border);">
-        <div style="font-size: 10px; color: var(--text-muted); line-height: 1.6;">
-          <strong style="color: var(--text-dim);">Important:</strong> This backtest uses simulated data modeled on real climate patterns for Kalshi's 4 weather stations.
-          Ensemble forecasts are generated with realistic spread characteristics matching GEFS behavior. Market prices are modeled
-          based on consumer-forecast-driven pricing with noise.
-        </div>
-        <div style="font-size: 10px; color: var(--text-muted); margin-top: 8px;">
-          NWS stations: KNYC (Central Park) &middot; KMDW (Midway) &middot; KMIA (Miami Intl) &middot; KAUS (Austin-Bergstrom)
-        </div>
+      <!-- Scan Log -->
+      <div style="font-size: 15px; font-weight: 600; margin-bottom: 0.75rem;">Scan Log</div>
+      <div class="wx-log" id="wx-log">
+        <div class="wx-log-line wx-log-info">Weather paper trader ready. Click SCAN NOW to begin.</div>
       </div>
     </div>
 
@@ -1124,8 +1077,7 @@ function switchTab(tab) {
 
   if (tab === 'scanner') runScan();
   if (tab === 'history') loadDBStatus();
-  if (tab === 'weather') wxLoadState();
-  if (tab === 'backtest') btRun();
+  if (tab === 'weather') { wxLoadState(); wxFetchServerTrades(); wxRefreshAnalytics(); }
   if (tab === 'chat' && document.getElementById('messages').children.length === 0) {
     addMessage('bot', 'Hello! I\'m your Polymarket quant analyst. Ask me about markets, probabilities, or trade sizing.');
   }
@@ -1625,19 +1577,19 @@ window.addEventListener('load', () => {
   // Scanner starts only when user clicks START
 });
 
-// ─── Weather Paper Trader ────────────────────────────────────────────────────
+// ─── Weather Paper Trader + Backtest ─────────────────────────────────────────
 
 const WX_CITIES = {
-  KXHIGHNY:  { name: "New York (Central Park)", lat: 40.7829, lon: -73.9654 },
-  KXHIGHCHI: { name: "Chicago (Midway)",        lat: 41.786,  lon: -87.752  },
-  KXHIGHMIA: { name: "Miami (MIA)",             lat: 25.7959, lon: -80.287  },
-  KXHIGHAUS: { name: "Austin (Bergstrom)",      lat: 30.1944, lon: -97.67   },
+  KXHIGHNY:  { name: "New York (Central Park)", lat: 40.7829, lon: -73.9654, stationKey: 'KNYC' },
+  KXHIGHCHI: { name: "Chicago (Midway)",        lat: 41.786,  lon: -87.752,  stationKey: 'KMDW' },
+  KXHIGHMIA: { name: "Miami (MIA)",             lat: 25.7959, lon: -80.287,  stationKey: 'KMIA' },
+  KXHIGHAUS: { name: "Austin (Bergstrom)",      lat: 30.1944, lon: -97.67,   stationKey: 'KAUS' },
 };
-const WX_MIN_EDGE = 0.08;
-const WX_KELLY_FRAC = 0.15;
+let WX_MIN_EDGE = 0.08;
+let WX_KELLY_FRAC = 0.15;
 const WX_MAX_POS_PCT = 0.05;
 const WX_MAX_TRADE = 100;
-const WX_STARTING_BANK = 1000;
+let WX_STARTING_BANK = 1000;
 
 let wxState = { bankroll: WX_STARTING_BANK, totalTrades: 0, wins: 0, losses: 0, pending: [], resolved: [], trades: [] };
 let wxAutoInterval = null;
@@ -1656,41 +1608,51 @@ function wxLog(msg, cls = 'wx-log-info') {
   el.scrollTop = el.scrollHeight;
 }
 
-function wxUpdateStats() {
-  const pnl = wxState.bankroll - WX_STARTING_BANK;
-  document.getElementById('wx-bankroll').textContent = '$' + wxState.bankroll.toFixed(2);
-  document.getElementById('wx-pnl').textContent = (pnl >= 0 ? '+' : '') + '$' + pnl.toFixed(2);
-  document.getElementById('wx-pnl').style.color = pnl >= 0 ? 'var(--green)' : 'var(--red)';
-  document.getElementById('wx-wl').textContent = wxState.wins + ' / ' + wxState.losses;
-  document.getElementById('wx-pending').textContent = wxState.pending.length;
+let wxTradesShown = false, wxTradeLimit = 30;
+
+function wxToggleTrades() {
+  wxTradesShown = !wxTradesShown;
+  document.getElementById('wx-trades-wrap').style.display = wxTradesShown ? 'block' : 'none';
+  document.getElementById('wx-toggle-trades').textContent = wxTradesShown ? 'Hide Trades' : 'Show Trades';
+  if (wxTradesShown) wxRenderTrades();
 }
 
-function wxUpdateTrades() {
+function wxRenderTrades() {
+  const trades = wxState.trades.slice().reverse();
   const tbody = document.getElementById('wx-trades-body');
-  if (wxState.trades.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="10" style="text-align: center; color: var(--text-dim); padding: 2rem;">No paper trades yet</td></tr>';
+  if (trades.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;color:var(--text-dim);padding:2rem;">No trades yet — click SCAN NOW</td></tr>';
+    document.getElementById('wx-load-more').style.display = 'none';
     return;
   }
-  tbody.innerHTML = wxState.trades.slice().reverse().slice(0, 50).map(t => {
-    const edgeCls = t.edge >= WX_MIN_EDGE ? 'edge-positive' : 'edge-negative';
-    let result = '<span style="color: var(--text-dim);">Pending</span>';
-    if (t.resolved) result = t.won
-      ? `<span style="color: var(--green);">+$${t.pnl.toFixed(2)}</span>`
-      : `<span style="color: var(--red);">-$${Math.abs(t.pnl).toFixed(2)}</span>`;
-    const sideColor = t.side==='YES'?'var(--green)':'var(--red)';
+  tbody.innerHTML = trades.slice(0, wxTradeLimit).map(t => {
+    let resultDot = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--text-muted);"></span>`;
+    let pnlCell = '<span style="color:var(--text-dim);">—</span>';
+    if (t.resolved) {
+      resultDot = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${t.won?'#22d3ee':'#f87171'};"></span>`;
+      pnlCell = `<span style="color:${t.pnl>=0?'#22d3ee':'#f87171'};font-weight:600;">${t.pnl>=0?'+':''}${t.pnl.toFixed(2)}</span>`;
+    }
     return `<tr>
-      <td>${wxEsc(new Date(t.timestamp).toLocaleString())}</td>
-      <td>${wxEsc(t.city)}</td>
-      <td>${wxEsc(t.bracket || t.ticker)}</td>
-      <td><span style="color: ${sideColor}; font-weight: 600;">${wxEsc(t.side)}</span></td>
-      <td>${(t.ensembleProb * 100).toFixed(0)}%</td>
-      <td>${(t.marketPrice * 100).toFixed(0)}c</td>
-      <td class="${edgeCls}">${(t.edge * 100).toFixed(1)}%</td>
+      <td style="color:#94a3b8;">${wxEsc(t.timestamp ? new Date(t.timestamp).toLocaleDateString() : t.date || '')}</td>
+      <td>${wxEsc(t.city || '')}</td>
+      <td>${wxEsc(t.bracket || t.ticker || '')}</td>
+      <td><span style="color:${t.side==='YES'?'var(--green)':'var(--red)'};font-weight:600;">${wxEsc(t.side||'')}</span></td>
+      <td style="color:#818cf8;">${(t.ensembleProb*100).toFixed(0)}%</td>
+      <td>${(t.marketPrice*100).toFixed(0)}c</td>
+      <td style="color:${t.edge>0?'#34d399':'#f87171'};">${(t.edge*100).toFixed(1)}%</td>
       <td>${t.contracts}</td>
-      <td>$${t.cost.toFixed(2)}</td>
-      <td>${result}</td>
+      <td>${pnlCell}</td>
+      <td style="color:var(--text-dim);">$${typeof (t.bankroll||wxState.bankroll)?.toFixed === 'function' ? (t.bankroll||wxState.bankroll).toFixed(0) : ''}</td>
+      <td>${resultDot}</td>
     </tr>`;
   }).join('');
+  const btn = document.getElementById('wx-load-more');
+  if (wxTradeLimit < trades.length) {
+    btn.style.display = 'block';
+    btn.textContent = `Load More (${trades.length - wxTradeLimit} remaining)`;
+  } else {
+    btn.style.display = 'none';
+  }
 }
 
 function wxSaveState() {
@@ -1705,8 +1667,6 @@ function wxLoadState() {
     const saved = localStorage.getItem('wxState');
     if (saved) wxState = JSON.parse(saved);
   } catch(e) {}
-  wxUpdateStats();
-  wxUpdateTrades();
 }
 
 async function wxFetchEnsemble(lat, lon) {
@@ -1788,11 +1748,12 @@ function wxEnsembleProb(maxTemps, bracketLow, bracketHigh, type) {
   return count / total;
 }
 
-function wxKellySize(prob, marketPrice, bankroll) {
+function wxKellySize(prob, marketPrice, bankroll, kellyFrac) {
   if (prob <= 0 || marketPrice <= 0 || marketPrice >= 1) return 0;
+  const kf = kellyFrac != null ? kellyFrac : WX_KELLY_FRAC;
   const odds = (1 - marketPrice) / marketPrice;
   const f = Math.max(0, (prob * odds - (1 - prob)) / odds);
-  const raw = f * WX_KELLY_FRAC * bankroll;
+  const raw = f * kf * bankroll;
   return Math.min(raw, bankroll * WX_MAX_POS_PCT, WX_MAX_TRADE);
 }
 
@@ -1911,8 +1872,7 @@ async function wxRunScan() {
   wxLog(`=== SCAN COMPLETE | ${totalEdges} edges found | Bankroll: $${wxState.bankroll.toFixed(2)} ===`);
 
   wxSaveState();
-  wxUpdateStats();
-  wxUpdateTrades();
+  wxRefreshAnalytics();
 
   btn.disabled = false;
   btn.textContent = 'SCAN NOW';
@@ -1937,7 +1897,7 @@ function wxToggleAuto() {
   }
 }
 
-// ─── Backtest Engine ─────────────────────────────────────────────────────────
+// ─── Simulation Engine (fixed model) ─────────────────────────────────────────
 
 const BT_STATIONS = {
   KNYC: { name: "New York (Central Park)", avgHigh: { summer: 84, winter: 39, spring: 62, fall: 58 }, stdDev: 5.2 },
@@ -1965,6 +1925,7 @@ function btSeason(m) {
 
 function btGenerateData(stationId, days) {
   const st = BT_STATIONS[stationId];
+  if (!st) return [];
   const rng = btSeededRng(stationId.charCodeAt(0) * 1000 + stationId.charCodeAt(1));
   const results = [];
   const start = new Date(2025, 3, 1);
@@ -1973,18 +1934,23 @@ function btGenerateData(stationId, days) {
     const month = date.getMonth() + 1;
     const base = st.avgHigh[btSeason(month)];
     const actual = Math.round(base + btGauss(rng) * st.stdDev);
+    // GEFS ensemble with its own systematic bias per day
+    const gefsBias = btGauss(rng) * 1.5;
     const members = [];
-    for (let m = 0; m < 21; m++) members.push(Math.round(actual + btGauss(rng) * (1.8 + 0.3)));
-    const eMean = members.reduce((a, b) => a + b, 0) / 21;
-    const consumer = Math.round(actual + btGauss(rng) * 2.8);
-    const bStart = Math.floor(actual / 2) * 2 - 6;
+    for (let m = 0; m < 31; m++) members.push(Math.round(actual + gefsBias + btGauss(rng) * 2.5));
+    const eMean = members.reduce((a, b) => a + b, 0) / 31;
+    // Consumer forecast with its own bias
+    const consumerBias = btGauss(rng) * 2.0;
+    const consumer = Math.round(actual + consumerBias + btGauss(rng) * 2.0);
+    // 5°F brackets (matching real Kalshi)
+    const bStart = Math.floor(actual / 5) * 5 - 10;
     const brackets = [];
     for (let b = 0; b < 7; b++) {
-      const lo = bStart + b * 2, hi = lo + 1;
-      const gefsProb = members.filter(t => t >= lo && t <= hi).length / 21;
+      const lo = bStart + b * 5, hi = lo + 4;
+      const gefsProb = members.filter(t => t >= lo && t <= hi).length / 31;
       const dist = Math.abs((lo + hi) / 2 - consumer);
-      let mp = Math.max(0.01, Math.min(0.95, Math.exp(-dist * dist / 18)));
-      mp = Math.max(0.01, Math.min(0.99, mp + (rng() - 0.5) * 0.08));
+      let mp = Math.max(0.02, Math.min(0.90, Math.exp(-dist * dist / 50)));
+      mp = Math.max(0.02, Math.min(0.95, mp + (rng() - 0.5) * 0.06));
       brackets.push({ label: `${lo}-${hi}°F`, low: lo, high: hi, gefsProb, marketPrice: mp, actualInBracket: actual >= lo && actual <= hi });
     }
     const mSum = brackets.reduce((a, b) => a + b.marketPrice, 0);
@@ -1998,19 +1964,24 @@ function btSimulate(data, minEV, kellyMult, startBank) {
   let bank = startBank;
   const trades = [];
   let wins = 0, losses = 0;
+  const SPREAD = 0.02; // 2-cent spread
+  const MAX_CONTRACTS = 50; // liquidity cap
+  const MAX_TRADE = 100; // $100 hard cap
   for (const day of data) {
     for (const br of day.brackets) {
-      if (br.ev >= minEV && br.gefsProb > 0.03) {
-        const odds = (1 - br.marketPrice) / br.marketPrice;
+      if (br.ev >= minEV && br.gefsProb > 0.05) {
+        const buyPrice = Math.min(0.99, br.marketPrice + SPREAD / 2);
+        const odds = (1 - buyPrice) / buyPrice;
         const f = Math.max(0, (br.gefsProb * odds - (1 - br.gefsProb)) / odds) * kellyMult;
-        const wager = Math.round(Math.min(f * bank, bank * 0.05) * 100) / 100;
+        const wager = Math.min(Math.round(Math.min(f * bank, bank * 0.05) * 100) / 100, MAX_TRADE);
         if (wager > 0.5) {
-          const contracts = Math.floor(wager / br.marketPrice);
-          const cost = contracts * br.marketPrice;
-          const pnl = br.actualInBracket ? contracts * (1 - br.marketPrice) : -cost;
+          const contracts = Math.min(Math.floor(wager / buyPrice), MAX_CONTRACTS);
+          if (contracts < 1) continue;
+          const cost = +(contracts * buyPrice).toFixed(2);
+          const pnl = br.actualInBracket ? +(contracts * (1 - buyPrice)).toFixed(2) : -cost;
           bank += pnl;
           if (br.actualInBracket) wins++; else losses++;
-          trades.push({ date: day.date, bracket: br.label, gefsProb: br.gefsProb, marketPrice: br.marketPrice, ev: br.ev, contracts, cost: Math.round(cost * 100) / 100, pnl: Math.round(pnl * 100) / 100, bankroll: Math.round(bank * 100) / 100, won: br.actualInBracket });
+          trades.push({ date: day.date, bracket: br.label, gefsProb: br.gefsProb, marketPrice: br.marketPrice, ev: br.ev, contracts, cost, pnl: Math.round(pnl * 100) / 100, bankroll: Math.round(bank * 100) / 100, won: br.actualInBracket });
         }
       }
     }
@@ -2027,101 +1998,163 @@ function btCalibration(data) {
   return bins.filter(b => b.count > 5).map(b => ({ ...b, avgPredicted: Math.round((b.predicted / b.count) * 100), avgActual: Math.round((b.actual / b.count) * 100) }));
 }
 
-let btTradesShown = false, btTradeLimit = 30, btLastSim = null;
+// ─── Unified Analytics ───────────────────────────────────────────────────────
 
-function btRun() {
-  const station = document.getElementById('bt-station').value;
-  const minEV = parseInt(document.getElementById('bt-min-ev').value) / 100;
-  const kellyMult = parseInt(document.getElementById('bt-kelly').value) / 100;
-  const bankroll = parseFloat(document.getElementById('bt-bankroll').value) || 1000;
+async function wxFetchServerTrades() {
+  try {
+    const r = await fetch(`${PROXY}/weather/trades`, { headers: { 'x-proxy-api-key': PKEY } });
+    if (!r.ok) return;
+    const serverTrades = await r.json();
+    // Merge server-resolved trades into wxState
+    for (const st of serverTrades) {
+      if (st.resolved) {
+        const local = wxState.trades.find(t => t.ticker === st.ticker && t.forecastDate === st.forecastDate && t.side === st.side);
+        if (local && !local.resolved) {
+          Object.assign(local, { resolved: true, won: st.won, pnl: st.pnl, actualTemp: st.actualTemp });
+          // Move from pending to resolved
+          wxState.pending = wxState.pending.filter(p => p !== local);
+          wxState.resolved.push(local);
+          if (st.won) wxState.wins++; else wxState.losses++;
+          wxState.bankroll += st.pnl;
+        }
+      }
+    }
+    wxSaveState();
+  } catch(e) { /* server may not be available */ }
+}
 
-  const data = btGenerateData(station, 180);
-  const sim = btSimulate(data, minEV, kellyMult, bankroll);
-  btLastSim = sim;
-  btTradeLimit = 30;
+function wxRefreshAnalytics() {
+  const stationFilter = document.getElementById('wx-station-filter')?.value || 'ALL';
+  const startBank = WX_STARTING_BANK;
 
-  const totalPnL = sim.finalBankroll - bankroll;
-  const roi = ((totalPnL / bankroll) * 100).toFixed(1);
-  const winRate = sim.trades.length > 0 ? ((sim.wins / (sim.wins + sim.losses)) * 100).toFixed(1) : '0';
-  const bankHist = [bankroll, ...sim.trades.map(t => t.bankroll)];
-  let peak = bankroll, maxDD = 0;
-  for (const b of bankHist) { if (b > peak) peak = b; const dd = (peak - b) / peak; if (dd > maxDD) maxDD = dd; }
-  const maxDrawdown = (maxDD * 100).toFixed(1);
-  const avgEV = sim.trades.length > 0 ? (sim.trades.reduce((a, t) => a + t.ev, 0) / sim.trades.length * 100).toFixed(1) : '0';
+  // Filter real trades by station
+  const stationNameMap = {};
+  for (const [k, c] of Object.entries(WX_CITIES)) stationNameMap[c.stationKey] = c.name;
+  let realTrades = wxState.trades || [];
+  if (stationFilter !== 'ALL') {
+    const cityName = stationNameMap[stationFilter] || '';
+    realTrades = realTrades.filter(t => t.city === cityName);
+  }
 
-  // KPIs
+  // Real KPIs
+  const realPnL = wxState.bankroll - startBank;
+  const realWinRate = (wxState.wins + wxState.losses) > 0 ? ((wxState.wins / (wxState.wins + wxState.losses)) * 100).toFixed(1) : '0';
+  const realBankHist = [startBank];
+  let runningBank = startBank;
+  for (const t of realTrades) {
+    if (t.resolved && t.pnl != null) { runningBank += t.pnl; realBankHist.push(Math.round(runningBank * 100) / 100); }
+    else { realBankHist.push(runningBank); }
+  }
+  let realPeak = startBank, realMaxDD = 0;
+  for (const b of realBankHist) { if (b > realPeak) realPeak = b; const dd = (realPeak - b) / realPeak; if (dd > realMaxDD) realMaxDD = dd; }
+  const realAvgEV = realTrades.length > 0 ? (realTrades.reduce((a, t) => a + (t.edge || 0), 0) / realTrades.length * 100).toFixed(1) : '0';
+
+  // Simulated backtest with same params
+  const simStation = stationFilter !== 'ALL' ? stationFilter : 'KNYC';
+  const simData = btGenerateData(simStation, 180);
+  const sim = btSimulate(simData, WX_MIN_EDGE, WX_KELLY_FRAC, startBank);
+  const simPnL = sim.finalBankroll - startBank;
+  const simBankHist = [startBank, ...sim.trades.map(t => t.bankroll)];
+
+  // KPI cards (show real data)
   const kpis = [
-    { label: 'Total P&L', value: '$' + totalPnL.toFixed(2), color: totalPnL >= 0 ? '#22d3ee' : '#f87171' },
-    { label: 'ROI', value: roi + '%', color: totalPnL >= 0 ? '#22d3ee' : '#f87171' },
-    { label: 'Win Rate', value: winRate + '%', color: '#818cf8' },
-    { label: 'Trades', value: sim.trades.length, color: '#94a3b8' },
-    { label: 'Max Drawdown', value: maxDrawdown + '%', color: '#f59e0b' },
-    { label: 'Avg EV/Trade', value: avgEV + '%', color: '#34d399' },
+    { label: 'Real P&L', value: '$' + realPnL.toFixed(2), color: realPnL >= 0 ? '#22d3ee' : '#f87171' },
+    { label: 'Sim P&L', value: '$' + simPnL.toFixed(2), color: simPnL >= 0 ? '#64748b' : '#f87171' },
+    { label: 'Win Rate', value: realWinRate + '%', color: '#818cf8' },
+    { label: 'Trades', value: `${realTrades.length} / ${sim.trades.length}`, color: '#94a3b8' },
+    { label: 'Max Drawdown', value: (realMaxDD * 100).toFixed(1) + '%', color: '#f59e0b' },
+    { label: 'Avg EV/Trade', value: realAvgEV + '%', color: '#34d399' },
   ];
-  document.getElementById('bt-kpis').innerHTML = kpis.map(k => `
+  document.getElementById('wx-kpis').innerHTML = kpis.map(k => `
     <div style="background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px;">
       <div style="font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px;">${k.label}</div>
       <div style="font-size: 22px; font-weight: 700; color: ${k.color};">${k.value}</div>
     </div>`).join('');
 
-  // Equity curve SVG
-  btDrawEquity(bankHist, bankroll, totalPnL);
+  // Dual equity curve
+  wxDrawDualEquity(realBankHist, simBankHist, startBank);
 
-  // Calibration SVG
-  const cal = btCalibration(data);
-  btDrawCalibration(cal);
+  // Dual calibration
+  const simCal = btCalibration(simData);
+  const realCal = wxRealCalibration(realTrades);
+  wxDrawDualCalibration(realCal, simCal);
 
   // Strategy insight
-  const insight = document.getElementById('bt-insight');
-  if (totalPnL > 0) {
-    insight.innerHTML = `<div style="font-size: 13px; font-weight: 600; color: #22d3ee; margin-bottom: 8px;">Strategy Analysis</div>
-      <div style="font-size: 12px; color: #94a3b8; line-height: 1.7;">
-        The GEFS ensemble shows <span style="color: #22d3ee;">positive edge</span> at this station with a ${(minEV * 100).toFixed(0)}% EV threshold.
-        Over 180 simulated days, the model generated ${sim.trades.length} trades with a ${winRate}% win rate.
-        The key insight: GEFS probability distributions capture uncertainty that single-point consumer forecasts miss,
-        creating systematic mispricing in the Kalshi bracket markets.
-        ${parseFloat(maxDrawdown) > 20 ? `<span style="color: #f59e0b;"> Warning: max drawdown of ${maxDrawdown}% suggests reducing Kelly fraction.</span>` : ''}
-      </div>`;
-  } else {
-    insight.innerHTML = `<div style="font-size: 13px; font-weight: 600; color: #22d3ee; margin-bottom: 8px;">Strategy Analysis</div>
-      <div style="font-size: 12px; color: #94a3b8; line-height: 1.7;">
-        At current settings, the edge is <span style="color: #f87171;">marginal or negative</span>.
-        Try adjusting the EV threshold higher (to be more selective) or testing a different station.
-        Miami tends to have tighter distributions making edge harder to find. NYC and Chicago have more volatility = more opportunity.
-      </div>`;
-  }
+  const insight = document.getElementById('wx-insight');
+  const simWinRate = sim.trades.length > 0 ? ((sim.wins / (sim.wins + sim.losses)) * 100).toFixed(1) : '0';
+  insight.innerHTML = `<div style="font-size: 13px; font-weight: 600; color: #22d3ee; margin-bottom: 8px;">Strategy Analysis</div>
+    <div style="font-size: 12px; color: #94a3b8; line-height: 1.7;">
+      <strong style="color:#22d3ee;">Real:</strong> ${realTrades.length} trades, ${realWinRate}% win rate, $${realPnL.toFixed(2)} P&L.
+      ${realTrades.length < 5 ? 'Run more scans to build trade history.' : ''}
+      <br><strong style="color:#64748b;">Simulated:</strong> ${sim.trades.length} trades over 180 days, ${simWinRate}% win rate, $${simPnL.toFixed(2)} P&L at ${(WX_MIN_EDGE*100).toFixed(0)}% EV / ${(WX_KELLY_FRAC*100).toFixed(0)}% Kelly.
+      ${simPnL > 0 ? ' GEFS ensemble shows edge vs consumer-forecast-driven pricing.' : ' Edge is marginal at current settings — try adjusting thresholds.'}
+    </div>`;
 
   // Trade log
-  btRenderTrades();
+  if (wxTradesShown) wxRenderTrades();
 }
 
-function btDrawEquity(hist, startBank, pnl) {
-  const svg = document.getElementById('bt-equity-svg');
+function wxRealCalibration(trades) {
+  const resolved = trades.filter(t => t.resolved);
+  if (resolved.length < 5) return [];
+  const bins = Array.from({ length: 10 }, (_, i) => ({ predicted: 0, actual: 0, count: 0 }));
+  for (const t of resolved) {
+    const idx = Math.min(9, Math.floor(t.ensembleProb * 10));
+    bins[idx].count++; bins[idx].predicted += t.ensembleProb; bins[idx].actual += t.won ? 1 : 0;
+  }
+  return bins.filter(b => b.count >= 3).map(b => ({ ...b, avgPredicted: Math.round((b.predicted / b.count) * 100), avgActual: Math.round((b.actual / b.count) * 100) }));
+}
+
+function wxDrawDualEquity(realHist, simHist, startBank) {
+  const svg = document.getElementById('wx-equity-svg');
   const w = svg.clientWidth || 340, h = 100;
   svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
-  const min = Math.min(...hist), max = Math.max(...hist);
+  const allVals = [...realHist, ...simHist];
+  const min = Math.min(...allVals), max = Math.max(...allVals);
   const range = max - min || 1;
-  const pts = hist.map((v, i) => `${(i / (hist.length - 1)) * w},${h - ((v - min) / range) * (h - 4) - 2}`).join(' ');
-  const color = hist[hist.length - 1] >= hist[0] ? '#22d3ee' : '#f87171';
-  svg.innerHTML = `<polyline fill="none" stroke="${color}" stroke-width="1.5" points="${pts}" />`;
-  document.getElementById('bt-equity-labels').innerHTML = `
+  function toPoints(hist) {
+    if (hist.length < 2) return '';
+    return hist.map((v, i) => `${(i / (hist.length - 1)) * w},${h - ((v - min) / range) * (h - 4) - 2}`).join(' ');
+  }
+  const simPts = toPoints(simHist);
+  const realPts = toPoints(realHist);
+  let html = '';
+  if (simPts) html += `<polyline fill="none" stroke="#64748b" stroke-width="1.5" stroke-dasharray="4,3" points="${simPts}" />`;
+  if (realPts && realHist.length > 1) html += `<polyline fill="none" stroke="#22d3ee" stroke-width="2" points="${realPts}" />`;
+  svg.innerHTML = html;
+
+  const realEnd = realHist[realHist.length - 1];
+  const simEnd = simHist[simHist.length - 1];
+  document.getElementById('wx-equity-labels').innerHTML = `
     <span style="font-size: 10px; color: var(--text-dim);">$${startBank}</span>
-    <span style="font-size: 10px; color: ${pnl >= 0 ? '#22d3ee' : '#f87171'};">$${hist[hist.length - 1].toFixed(2)}</span>`;
+    <span style="font-size: 10px;">
+      <span style="color: #22d3ee;">$${realEnd.toFixed(0)}</span>
+      <span style="color: var(--text-muted);">/</span>
+      <span style="color: #64748b;">$${simEnd.toFixed(0)}</span>
+    </span>`;
 }
 
-function btDrawCalibration(bins) {
-  const svg = document.getElementById('bt-cal-svg');
+function wxDrawDualCalibration(realBins, simBins) {
+  const svg = document.getElementById('wx-cal-svg');
   const w = 320, h = 200, pad = 40;
   const pw = w - pad * 2, ph = h - pad * 2;
   let html = '';
   html += `<line x1="${pad}" y1="${pad}" x2="${pad}" y2="${h - pad}" stroke="#334155" stroke-width="1" />`;
   html += `<line x1="${pad}" y1="${h - pad}" x2="${w - pad}" y2="${h - pad}" stroke="#334155" stroke-width="1" />`;
   html += `<line x1="${pad}" y1="${h - pad}" x2="${w - pad}" y2="${pad}" stroke="#475569" stroke-width="1" stroke-dasharray="4,4" />`;
-  for (const b of bins) {
+  // Simulated dots (gray, behind)
+  for (const b of simBins) {
     const x = pad + (b.avgPredicted / 100) * pw;
     const y = h - pad - (b.avgActual / 100) * ph;
-    const r = Math.min(6, 2 + b.count / 20);
-    html += `<circle cx="${x}" cy="${y}" r="${r}" fill="#22d3ee" opacity="0.9"><title>Predicted: ${b.avgPredicted}% | Actual: ${b.avgActual}% | n=${b.count}</title></circle>`;
+    const r = Math.min(6, 2 + b.count / 30);
+    html += `<circle cx="${x}" cy="${y}" r="${r}" fill="#64748b" opacity="0.5"><title>Sim — Predicted: ${b.avgPredicted}% | Actual: ${b.avgActual}% | n=${b.count}</title></circle>`;
+  }
+  // Real dots (cyan, in front)
+  for (const b of realBins) {
+    const x = pad + (b.avgPredicted / 100) * pw;
+    const y = h - pad - (b.avgActual / 100) * ph;
+    const r = Math.min(7, 3 + b.count / 5);
+    html += `<circle cx="${x}" cy="${y}" r="${r}" fill="#22d3ee" opacity="0.9"><title>Real — Predicted: ${b.avgPredicted}% | Actual: ${b.avgActual}% | n=${b.count}</title></circle>`;
   }
   html += `<text x="${w / 2}" y="${h - 5}" fill="#94a3b8" font-size="10" text-anchor="middle">GEFS Predicted %</text>`;
   html += `<text x="12" y="${h / 2}" fill="#94a3b8" font-size="10" text-anchor="middle" transform="rotate(-90,12,${h / 2})">Actual %</text>`;
@@ -2129,42 +2162,6 @@ function btDrawCalibration(bins) {
   html += `<text x="${pad}" y="${h - pad + 12}" fill="#64748b" font-size="9">0%</text>`;
   html += `<text x="${w - pad}" y="${h - pad + 12}" fill="#64748b" font-size="9">100%</text>`;
   svg.innerHTML = html;
-}
-
-function btToggleTrades() {
-  btTradesShown = !btTradesShown;
-  document.getElementById('bt-trades-wrap').style.display = btTradesShown ? 'block' : 'none';
-  document.getElementById('bt-toggle-trades').textContent = btTradesShown ? 'Hide Trades' : 'Show Trades';
-  if (btTradesShown) btRenderTrades();
-}
-
-function btRenderTrades() {
-  if (!btLastSim) return;
-  const trades = btLastSim.trades;
-  const tbody = document.getElementById('bt-trades-body');
-  tbody.innerHTML = trades.slice(0, btTradeLimit).map(t => `<tr>
-    <td style="color: #94a3b8;">${wxEsc(t.date)}</td>
-    <td>${wxEsc(t.bracket)}</td>
-    <td style="color: #818cf8;">${(t.gefsProb * 100).toFixed(0)}%</td>
-    <td>${(t.marketPrice * 100).toFixed(0)}c</td>
-    <td style="color: ${t.ev > 0 ? '#34d399' : '#f87171'};">${(t.ev * 100).toFixed(0)}%</td>
-    <td>${t.contracts}</td>
-    <td style="color: ${t.pnl >= 0 ? '#22d3ee' : '#f87171'}; font-weight: 600;">${t.pnl >= 0 ? '+' : ''}${t.pnl.toFixed(2)}</td>
-    <td style="color: var(--text-dim);">$${t.bankroll.toFixed(0)}</td>
-    <td><span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: ${t.won ? '#22d3ee' : '#f87171'};"></span></td>
-  </tr>`).join('');
-  const btn = document.getElementById('bt-load-more');
-  if (btTradeLimit < trades.length) {
-    btn.style.display = 'block';
-    btn.textContent = `Load More (${trades.length - btTradeLimit} remaining)`;
-  } else {
-    btn.style.display = 'none';
-  }
-}
-
-function btLoadMore() {
-  btTradeLimit += 30;
-  btRenderTrades();
 }
 </script>
 
