@@ -121,4 +121,9 @@ async function main() {
   setInterval(() => scan().catch(console.error), config.scanIntervalMs);
 }
 
-main().catch(console.error);
+// Only auto-start when run directly (not when imported by server.js)
+if (require.main === module) {
+  main().catch(console.error);
+}
+
+module.exports = { scan };
