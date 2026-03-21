@@ -545,7 +545,135 @@
     .msg-bubble { max-width: 90%; }
     .size-row { grid-template-columns: 1fr; }
     .scanner-controls { grid-template-columns: 1fr 1fr 1fr; }
+    .wx-city-grid { grid-template-columns: 1fr !important; }
+    .wx-stats-row { grid-template-columns: 1fr 1fr !important; }
   }
+
+  /* Weather Tab */
+  .wx-stats-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr 1fr;
+    gap: 0.875rem;
+    margin-bottom: 1.5rem;
+  }
+  .wx-stat {
+    background: var(--card);
+    border: 1px solid var(--border);
+    padding: 1.125rem;
+    border-radius: var(--radius);
+  }
+  .wx-stat-label {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-bottom: 0.5rem;
+  }
+  .wx-stat-val {
+    font-size: 22px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+  }
+  .wx-city-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+  }
+  .wx-city-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.25rem;
+  }
+  .wx-city-name {
+    font-size: 15px;
+    font-weight: 600;
+    margin-bottom: 0.25rem;
+  }
+  .wx-city-meta {
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-bottom: 1rem;
+  }
+  .wx-forecast-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 0.75rem;
+  }
+  .wx-temp-big {
+    font-size: 28px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+  }
+  .wx-temp-range {
+    font-size: 12px;
+    color: var(--text-dim);
+    line-height: 1.4;
+  }
+  .wx-edges-list {
+    max-height: 200px;
+    overflow-y: auto;
+    margin-top: 0.75rem;
+  }
+  .wx-edge-row {
+    display: grid;
+    grid-template-columns: 1fr auto auto auto auto;
+    gap: 0.5rem;
+    align-items: center;
+    padding: 0.4rem 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 12px;
+  }
+  .wx-edge-row:last-child { border-bottom: none; }
+  .wx-edge-bracket { font-weight: 500; }
+  .wx-edge-val { font-weight: 600; }
+  .wx-paper-trades {
+    margin-top: 1rem;
+  }
+  .wx-controls {
+    display: flex;
+    gap: 0.625rem;
+    margin-bottom: 1.5rem;
+    align-items: center;
+  }
+  .wx-btn {
+    padding: 0.625rem 1.25rem;
+    background: var(--card);
+    border: 1px solid rgba(16,185,129,0.3);
+    color: var(--green);
+    cursor: pointer;
+    border-radius: var(--radius-sm);
+    font-family: inherit;
+    font-weight: 600;
+    font-size: 13px;
+    transition: background 0.15s, border-color 0.15s;
+    white-space: nowrap;
+  }
+  .wx-btn:hover { background: var(--green-dim); border-color: var(--green); }
+  .wx-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .wx-btn.active {
+    background: var(--green);
+    color: #000;
+  }
+  .wx-log {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1rem;
+    max-height: 300px;
+    overflow-y: auto;
+    font-size: 12px;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    line-height: 1.6;
+    color: var(--text-dim);
+  }
+  .wx-log-line { padding: 0.15rem 0; }
+  .wx-log-trade { color: var(--green); font-weight: 500; }
+  .wx-log-error { color: var(--red); }
+  .wx-log-info { color: var(--text-dim); }
 </style>
 </head>
 <body>
@@ -556,6 +684,7 @@
     <button class="tab-btn" onclick="switchTab('deck')">Trade Deck</button>
     <button class="tab-btn" onclick="switchTab('history')">History</button>
     <button class="tab-btn" onclick="switchTab('chat')">Chat</button>
+    <button class="tab-btn" onclick="switchTab('weather')">Weather</button>
   </div>
 
   <div class="content">
@@ -800,6 +929,67 @@
       </div>
     </div>
 
+    <!-- TAB 4: WEATHER -->
+    <div id="weather" class="tab-content">
+      <h2 style="margin-bottom: 0.5rem; font-size: 18px;">Weather Paper Trader</h2>
+      <p style="font-size: 12px; color: var(--text-dim); margin-bottom: 1.5rem;">
+        GFS 31-member ensemble vs Kalshi weather market prices. Paper trading with Kelly criterion sizing.
+      </p>
+
+      <div class="wx-controls">
+        <button class="wx-btn" id="wx-scan-btn" onclick="wxRunScan()">SCAN NOW</button>
+        <button class="wx-btn" id="wx-auto-btn" onclick="wxToggleAuto()">AUTO OFF</button>
+        <span style="font-size: 12px; color: var(--text-dim);" id="wx-scan-status">Ready</span>
+      </div>
+
+      <div class="wx-stats-row" id="wx-stats">
+        <div class="wx-stat">
+          <div class="wx-stat-label">Bankroll</div>
+          <div class="wx-stat-val" id="wx-bankroll" style="color: var(--green);">$1,000.00</div>
+        </div>
+        <div class="wx-stat">
+          <div class="wx-stat-label">P&L</div>
+          <div class="wx-stat-val" id="wx-pnl" style="color: var(--text-dim);">$0.00</div>
+        </div>
+        <div class="wx-stat">
+          <div class="wx-stat-label">Win / Loss</div>
+          <div class="wx-stat-val" id="wx-wl" style="color: var(--text);">0 / 0</div>
+        </div>
+        <div class="wx-stat">
+          <div class="wx-stat-label">Pending</div>
+          <div class="wx-stat-val" id="wx-pending" style="color: var(--text);">0</div>
+        </div>
+      </div>
+
+      <div class="wx-city-grid" id="wx-cities">
+        <!-- Filled by JS -->
+      </div>
+
+      <h3 style="font-size: 15px; font-weight: 600; margin-bottom: 0.75rem;">Paper Trades</h3>
+      <table id="wx-trades-table">
+        <thead><tr>
+          <th>Time</th>
+          <th>City</th>
+          <th>Bracket</th>
+          <th>Side</th>
+          <th>GEFS %</th>
+          <th>Market</th>
+          <th>Edge</th>
+          <th>Contracts</th>
+          <th>Cost</th>
+          <th>Result</th>
+        </tr></thead>
+        <tbody id="wx-trades-body">
+          <tr><td colspan="10" style="text-align: center; color: var(--text-dim); padding: 2rem;">Click SCAN NOW to find weather market edges</td></tr>
+        </tbody>
+      </table>
+
+      <h3 style="font-size: 15px; font-weight: 600; margin: 1.5rem 0 0.75rem;">Scan Log</h3>
+      <div class="wx-log" id="wx-log">
+        <div class="wx-log-line wx-log-info">Weather paper trader ready. Click SCAN NOW to begin.</div>
+      </div>
+    </div>
+
   </div>
 </div>
 
@@ -837,6 +1027,7 @@ function switchTab(tab) {
 
   if (tab === 'scanner') runScan();
   if (tab === 'history') loadDBStatus();
+  if (tab === 'weather') wxLoadState();
   if (tab === 'chat' && document.getElementById('messages').children.length === 0) {
     addMessage('bot', 'Hello! I\'m your Polymarket quant analyst. Ask me about markets, probabilities, or trade sizing.');
   }
@@ -1335,6 +1526,302 @@ User: ${msg}`;
 window.addEventListener('load', () => {
   // Scanner starts only when user clicks START
 });
+
+// ─── Weather Paper Trader ────────────────────────────────────────────────────
+
+const WX_CITIES = {
+  KXHIGHNY:  { name: "New York (Central Park)", lat: 40.7829, lon: -73.9654 },
+  KXHIGHCHI: { name: "Chicago (Midway)",        lat: 41.786,  lon: -87.752  },
+  KXHIGHMIA: { name: "Miami (MIA)",             lat: 25.7959, lon: -80.287  },
+  KXHIGHAUS: { name: "Austin (Bergstrom)",      lat: 30.1944, lon: -97.67   },
+};
+const WX_MIN_EDGE = 0.08;
+const WX_KELLY_FRAC = 0.15;
+const WX_MAX_POS_PCT = 0.05;
+const WX_MAX_TRADE = 100;
+const WX_STARTING_BANK = 1000;
+
+let wxState = { bankroll: WX_STARTING_BANK, totalTrades: 0, wins: 0, losses: 0, pending: [], resolved: [], trades: [] };
+let wxAutoInterval = null;
+
+function wxLog(msg, cls = 'wx-log-info') {
+  const el = document.getElementById('wx-log');
+  const ts = new Date().toLocaleTimeString();
+  el.innerHTML += `<div class="wx-log-line ${cls}">[${ts}] ${msg}</div>`;
+  el.scrollTop = el.scrollHeight;
+}
+
+function wxUpdateStats() {
+  const pnl = wxState.bankroll - WX_STARTING_BANK;
+  document.getElementById('wx-bankroll').textContent = '$' + wxState.bankroll.toFixed(2);
+  document.getElementById('wx-pnl').textContent = (pnl >= 0 ? '+' : '') + '$' + pnl.toFixed(2);
+  document.getElementById('wx-pnl').style.color = pnl >= 0 ? 'var(--green)' : 'var(--red)';
+  document.getElementById('wx-wl').textContent = wxState.wins + ' / ' + wxState.losses;
+  document.getElementById('wx-pending').textContent = wxState.pending.length;
+}
+
+function wxUpdateTrades() {
+  const tbody = document.getElementById('wx-trades-body');
+  if (wxState.trades.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="10" style="text-align: center; color: var(--text-dim); padding: 2rem;">No paper trades yet</td></tr>';
+    return;
+  }
+  tbody.innerHTML = wxState.trades.slice().reverse().slice(0, 50).map(t => {
+    const edgeCls = t.edge >= WX_MIN_EDGE ? 'edge-positive' : 'edge-negative';
+    let result = '<span style="color: var(--text-dim);">Pending</span>';
+    if (t.resolved) result = t.won
+      ? `<span style="color: var(--green);">+$${t.pnl.toFixed(2)}</span>`
+      : `<span style="color: var(--red);">-$${Math.abs(t.pnl).toFixed(2)}</span>`;
+    return `<tr>
+      <td>${new Date(t.timestamp).toLocaleString()}</td>
+      <td>${t.city}</td>
+      <td>${t.bracket || t.ticker}</td>
+      <td><span style="color: ${t.side==='YES'?'var(--green)':'var(--red)'}; font-weight: 600;">${t.side}</span></td>
+      <td>${(t.ensembleProb * 100).toFixed(0)}%</td>
+      <td>${(t.marketPrice * 100).toFixed(0)}c</td>
+      <td class="${edgeCls}">${(t.edge * 100).toFixed(1)}%</td>
+      <td>${t.contracts}</td>
+      <td>$${t.cost.toFixed(2)}</td>
+      <td>${result}</td>
+    </tr>`;
+  }).join('');
+}
+
+function wxSaveState() {
+  try { localStorage.setItem('wxState', JSON.stringify(wxState)); } catch(e) {}
+}
+
+function wxLoadState() {
+  try {
+    const saved = localStorage.getItem('wxState');
+    if (saved) wxState = JSON.parse(saved);
+  } catch(e) {}
+  wxUpdateStats();
+  wxUpdateTrades();
+}
+
+async function wxFetchEnsemble(lat, lon) {
+  const url = `https://api.open-meteo.com/v1/ensemble?latitude=${lat}&longitude=${lon}&hourly=temperature_2m&models=gfs_seamless&temperature_unit=fahrenheit&forecast_days=2&timezone=auto`;
+  const r = await fetch(url);
+  if (!r.ok) throw new Error('Open-Meteo: ' + r.status);
+  return r.json();
+}
+
+function wxExtractDailyMax(data) {
+  if (!data?.hourly) return null;
+  const times = data.hourly.time;
+  const memberKeys = Object.keys(data.hourly).filter(k => k.startsWith('temperature_2m_member'));
+  if (memberKeys.length === 0) return null;
+  const dailyMax = {};
+  for (let i = 0; i < times.length; i++) {
+    const date = times[i].split('T')[0];
+    if (!dailyMax[date]) dailyMax[date] = memberKeys.reduce((a, mk) => ({...a, [mk]: -Infinity}), {});
+    for (const mk of memberKeys) {
+      const temp = data.hourly[mk][i];
+      if (temp != null && temp > dailyMax[date][mk]) dailyMax[date][mk] = temp;
+    }
+  }
+  return Object.entries(dailyMax).map(([date, mm]) => ({
+    date,
+    maxTemps: memberKeys.map(mk => mm[mk]).filter(t => t > -Infinity),
+    memberCount: memberKeys.length,
+  })).filter(d => d.maxTemps.length > 0);
+}
+
+async function wxFetchMarkets(seriesTicker) {
+  const url = `https://api.elections.kalshi.com/trade-api/v2/markets?series_ticker=${seriesTicker}&status=open&limit=100`;
+  const r = await fetch(url);
+  if (!r.ok) throw new Error('Kalshi: ' + r.status);
+  const d = await r.json();
+  return d.markets || [];
+}
+
+function wxParseMarket(market) {
+  const subtitle = market.subtitle || '';
+  const ticker = market.ticker || '';
+  let bracketLow = null, bracketHigh = null, type = 'bracket';
+
+  const rangeMatch = subtitle.match(/(\d+)\s*to\s*(\d+)/i);
+  const aboveMatch = subtitle.match(/(\d+)\s*or\s*(higher|above)/i);
+  const belowMatch = subtitle.match(/(\d+)\s*or\s*(lower|below)/i);
+
+  if (rangeMatch) { bracketLow = parseInt(rangeMatch[1]); bracketHigh = parseInt(rangeMatch[2]); type = 'bracket'; }
+  else if (aboveMatch) { bracketLow = parseInt(aboveMatch[1]); bracketHigh = 200; type = 'above'; }
+  else if (belowMatch) { bracketLow = -50; bracketHigh = parseInt(belowMatch[1]); type = 'below'; }
+
+  if (bracketLow === null && market.floor_strike != null) {
+    bracketLow = parseFloat(market.floor_strike);
+    bracketHigh = market.cap_strike != null ? parseFloat(market.cap_strike) : 200;
+    type = market.cap_strike != null ? 'bracket' : 'above';
+  }
+
+  if (bracketLow === null) {
+    const bMatch = ticker.match(/B(\d+\.?\d*)/);
+    const tMatch = ticker.match(/T(\d+\.?\d*)/);
+    if (bMatch) { bracketLow = parseFloat(bMatch[1]); bracketHigh = bracketLow + 1; type = 'bracket'; }
+    else if (tMatch) { bracketLow = parseFloat(tMatch[1]); bracketHigh = 200; type = 'above'; }
+  }
+
+  let marketPrice = null;
+  if (market.yes_bid > 0 && market.yes_bid < 99) marketPrice = market.yes_bid / 100;
+  else if (market.last_price > 0 && market.last_price < 99) marketPrice = market.last_price / 100;
+
+  return { ticker, subtitle, type, bracketLow, bracketHigh, marketPrice, volume: market.volume };
+}
+
+function wxEnsembleProb(maxTemps, bracketLow, bracketHigh, type) {
+  const total = maxTemps.length;
+  if (total === 0) return 0;
+  let count;
+  if (type === 'above') count = maxTemps.filter(t => t >= bracketLow).length;
+  else if (type === 'below') count = maxTemps.filter(t => t <= bracketHigh).length;
+  else count = maxTemps.filter(t => t >= bracketLow && t <= bracketHigh).length;
+  return count / total;
+}
+
+function wxKellySize(prob, marketPrice, bankroll) {
+  if (prob <= 0 || marketPrice <= 0 || marketPrice >= 1) return 0;
+  const odds = (1 - marketPrice) / marketPrice;
+  const f = Math.max(0, (prob * odds - (1 - prob)) / odds);
+  const raw = f * WX_KELLY_FRAC * bankroll;
+  return Math.min(raw, bankroll * WX_MAX_POS_PCT, WX_MAX_TRADE);
+}
+
+async function wxRunScan() {
+  const btn = document.getElementById('wx-scan-btn');
+  btn.disabled = true;
+  btn.textContent = 'SCANNING...';
+  document.getElementById('wx-scan-status').textContent = 'Scanning...';
+
+  const ts = new Date().toISOString();
+  const citiesEl = document.getElementById('wx-cities');
+  citiesEl.innerHTML = '';
+  let totalEdges = 0;
+
+  wxLog('=== SCAN START ===');
+
+  for (const [key, city] of Object.entries(WX_CITIES)) {
+    let cardHtml = `<div class="wx-city-card"><div class="wx-city-name">${city.name}</div>`;
+
+    try {
+      wxLog(`Fetching ensemble for ${city.name}...`);
+      const ensemble = await wxFetchEnsemble(city.lat, city.lon);
+      const dailyMax = wxExtractDailyMax(ensemble);
+
+      if (!dailyMax?.length) {
+        cardHtml += `<div class="wx-city-meta">No ensemble data</div></div>`;
+        citiesEl.innerHTML += cardHtml;
+        wxLog(`${city.name}: no ensemble data`, 'wx-log-error');
+        continue;
+      }
+
+      const tomorrow = dailyMax.length > 1 ? dailyMax[1] : dailyMax[0];
+      const mean = tomorrow.maxTemps.reduce((a, b) => a + b, 0) / tomorrow.maxTemps.length;
+      const std = Math.sqrt(tomorrow.maxTemps.reduce((a, b) => a + (b - mean) ** 2, 0) / tomorrow.maxTemps.length);
+      const min = Math.min(...tomorrow.maxTemps);
+      const max = Math.max(...tomorrow.maxTemps);
+
+      cardHtml += `<div class="wx-city-meta">${tomorrow.date} | ${tomorrow.memberCount} members</div>`;
+      cardHtml += `<div class="wx-forecast-bar">`;
+      cardHtml += `<div class="wx-temp-big" style="color: var(--green);">${mean.toFixed(0)}°F</div>`;
+      cardHtml += `<div class="wx-temp-range">Range: ${min.toFixed(0)}–${max.toFixed(0)}°F<br>Std: ${std.toFixed(1)}°F</div>`;
+      cardHtml += `</div>`;
+
+      wxLog(`${city.name}: Mean ${mean.toFixed(1)}F, Std ${std.toFixed(1)}F (${tomorrow.memberCount} members)`);
+
+      // Fetch markets
+      let markets = [];
+      try {
+        markets = await wxFetchMarkets(key);
+        wxLog(`${city.name}: ${markets.length} open markets`);
+      } catch(e) {
+        wxLog(`${city.name}: Kalshi error - ${e.message}`, 'wx-log-error');
+      }
+
+      if (markets.length > 0) {
+        cardHtml += `<div style="font-size: 11px; font-weight: 600; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 0.5rem;">Market Edges</div>`;
+        cardHtml += `<div class="wx-edges-list">`;
+
+        for (const market of markets) {
+          const parsed = wxParseMarket(market);
+          if (!parsed.bracketLow || !parsed.marketPrice) continue;
+
+          const prob = wxEnsembleProb(tomorrow.maxTemps, parsed.bracketLow, parsed.bracketHigh, parsed.type);
+          const edge = prob - parsed.marketPrice;
+
+          if (Math.abs(edge) >= WX_MIN_EDGE) {
+            totalEdges++;
+            const side = edge > 0 ? 'YES' : 'NO';
+            const tradeProb = edge > 0 ? prob : 1 - prob;
+            const tradePrice = edge > 0 ? parsed.marketPrice : 1 - parsed.marketPrice;
+            const posSize = wxKellySize(tradeProb, tradePrice, wxState.bankroll);
+
+            const edgeColor = edge > 0 ? 'var(--green)' : 'var(--red)';
+            const label = parsed.subtitle || `${parsed.bracketLow}-${parsed.bracketHigh}`;
+            cardHtml += `<div class="wx-edge-row">
+              <span class="wx-edge-bracket">${label}</span>
+              <span style="color: ${edge > 0 ? 'var(--green)' : 'var(--red)'}; font-weight: 600;">${side}</span>
+              <span>GEFS: ${(prob*100).toFixed(0)}%</span>
+              <span>Mkt: ${(parsed.marketPrice*100).toFixed(0)}c</span>
+              <span class="wx-edge-val" style="color: ${edgeColor};">${(Math.abs(edge)*100).toFixed(1)}%</span>
+            </div>`;
+
+            if (posSize > 0.5) {
+              const contracts = Math.floor(posSize / tradePrice);
+              const cost = +(contracts * tradePrice).toFixed(2);
+              if (contracts > 0) {
+                const trade = { timestamp: ts, city: city.name, ticker: parsed.ticker, bracket: parsed.subtitle || label, side, ensembleProb: +prob.toFixed(3), marketPrice: +parsed.marketPrice.toFixed(3), edge: +Math.abs(edge).toFixed(3), contracts, cost, forecastDate: tomorrow.date, status: 'PAPER', resolved: false };
+                wxState.trades.push(trade);
+                wxState.pending.push(trade);
+                wxState.totalTrades++;
+                wxLog(`TRADE: ${side} ${label} @ ${(parsed.marketPrice*100).toFixed(0)}c | GEFS: ${(prob*100).toFixed(0)}% | Edge: ${(Math.abs(edge)*100).toFixed(1)}% | ${contracts}x ($${cost})`, 'wx-log-trade');
+              }
+            }
+          }
+        }
+        cardHtml += `</div>`;
+      } else {
+        cardHtml += `<div style="font-size: 12px; color: var(--text-dim); margin-top: 0.5rem;">No open markets found</div>`;
+      }
+    } catch(e) {
+      cardHtml += `<div class="wx-city-meta" style="color: var(--red);">Error: ${e.message}</div>`;
+      wxLog(`${city.name}: ${e.message}`, 'wx-log-error');
+    }
+
+    cardHtml += `</div>`;
+    citiesEl.innerHTML += cardHtml;
+
+    // Rate limit
+    await new Promise(r => setTimeout(r, 500));
+  }
+
+  wxLog(`=== SCAN COMPLETE | ${totalEdges} edges found | Bankroll: $${wxState.bankroll.toFixed(2)} ===`);
+
+  wxSaveState();
+  wxUpdateStats();
+  wxUpdateTrades();
+
+  btn.disabled = false;
+  btn.textContent = 'SCAN NOW';
+  document.getElementById('wx-scan-status').textContent = 'Last scan: ' + new Date().toLocaleTimeString();
+}
+
+function wxToggleAuto() {
+  const btn = document.getElementById('wx-auto-btn');
+  if (wxAutoInterval) {
+    clearInterval(wxAutoInterval);
+    wxAutoInterval = null;
+    btn.textContent = 'AUTO OFF';
+    btn.classList.remove('active');
+    wxLog('Auto-scan stopped');
+  } else {
+    wxAutoInterval = setInterval(() => wxRunScan(), 5 * 60 * 1000);
+    btn.textContent = 'AUTO ON (5m)';
+    btn.classList.add('active');
+    wxLog('Auto-scan enabled (every 5 minutes)');
+    wxRunScan();
+  }
+}
 </script>
 
 </body>
