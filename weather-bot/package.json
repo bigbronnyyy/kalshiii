@@ -1,0 +1,15 @@
+{
+  "name": "kalshi-weather-paper-trader",
+  "version": "1.0.0",
+  "description": "GFS ensemble vs Kalshi weather market paper trader",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "once": "node index.js once",
+    "stats": "node index.js stats",
+    "calibration": "node index.js calibration"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
