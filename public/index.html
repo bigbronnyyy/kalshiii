@@ -1698,8 +1698,8 @@ function wxExtractDailyMax(data) {
 }
 
 async function wxFetchMarkets(seriesTicker) {
-  const url = `https://api.elections.kalshi.com/trade-api/v2/markets?series_ticker=${seriesTicker}&status=open&limit=100`;
-  const r = await fetch(url);
+  const url = `${PROXY}/kalshi/markets?series_ticker=${encodeURIComponent(seriesTicker)}&status=open&limit=100`;
+  const r = await fetch(url, { headers: { 'x-proxy-api-key': PKEY } });
   if (!r.ok) throw new Error('Kalshi: ' + r.status);
   const d = await r.json();
   return d.markets || [];

@@ -365,6 +365,22 @@ app.post("/trade", requireProxyApiKey, (req, res) => {
   });
 });
 
+// ─── Kalshi API proxy (avoids browser CORS restrictions) ─────────────────────
+
+app.get("/kalshi/markets", requireProxyApiKey, async (req, res) => {
+  const { series_ticker, status = "open", limit = 100 } = req.query;
+  if (!series_ticker) return res.status(400).json({ error: "missing series_ticker" });
+  try {
+    const url = `https://api.elections.kalshi.com/trade-api/v2/markets?series_ticker=${encodeURIComponent(series_ticker)}&status=${encodeURIComponent(status)}&limit=${encodeURIComponent(limit)}`;
+    const r = await fetch(url, { headers: { "Accept": "application/json" } });
+    if (!r.ok) return res.status(r.status).json({ error: "kalshi_error", status: r.status });
+    const data = await r.json();
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: "kalshi_fetch_error", message: err.message });
+  }
+});
+
 // ─── Global error handler (must be last) ─────────────────────────────────────
 
 app.use((err, req, res, next) => {
