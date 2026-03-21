@@ -24,7 +24,7 @@ module.exports = {
   stateFile: path.join(__dirname, "data/bot_state.json"),
 
   // API endpoints
-  openMeteoBase: "https://api.open-meteo.com/v1/ensemble",
+  openMeteoBase: "https://ensemble-api.open-meteo.com/v1/ensemble",
   kalshiBase: "https://api.elections.kalshi.com/trade-api/v2",
   nwsBase: "https://api.weather.gov",
 };
