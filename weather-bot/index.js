@@ -38,7 +38,7 @@ async function scan() {
 
       for (const market of markets) {
         const parsed = parseWeatherMarket(market);
-        if (!parsed.bracketLow || !parsed.marketPrice) continue;
+        if (parsed.bracketLow == null || !parsed.marketPrice) continue;
 
         const prob = computeEnsembleProb(tomorrow.maxTemps, parsed.bracketLow, parsed.bracketHigh, parsed.type);
         const edge = findEdge(prob, parsed.marketPrice);
@@ -54,6 +54,9 @@ async function scan() {
           if (posSize > 0.5) {
             const contracts = Math.floor(posSize / tradePrice);
             const cost = +(contracts * tradePrice).toFixed(2);
+            const dupeKey = `${city.name}|${parsed.ticker}|${tomorrow.date}|${side}`;
+            const isDupe = state.pending.some(t => `${t.city}|${t.ticker}|${t.forecastDate}|${t.side}` === dupeKey);
+            if (isDupe) continue;
             const trade = { timestamp: ts, city: city.name, ticker: parsed.ticker, bracket: parsed.subtitle, side, ensembleProb: +prob.toFixed(3), marketPrice: +parsed.marketPrice.toFixed(3), edge: +Math.abs(edge).toFixed(3), contracts, cost, forecastDate: tomorrow.date, status: "PAPER", resolved: false };
 
             appendTrade(trade);
@@ -87,7 +90,10 @@ async function scan() {
     else inBracket = actual >= parsed.bracketLow && actual <= parsed.bracketHigh;
 
     const won = trade.side === "YES" ? inBracket : !inBracket;
-    const pnl = won ? +(trade.contracts * (1 - trade.marketPrice)).toFixed(2) : -trade.cost;
+    const payout = trade.side === "YES"
+      ? trade.contracts * (1 - trade.marketPrice)
+      : trade.contracts * trade.marketPrice;
+    const pnl = won ? +payout.toFixed(2) : -trade.cost;
     state.bankroll += pnl;
     if (won) state.wins++; else state.losses++;
     trade.actualTemp = actual; trade.won = won; trade.pnl = pnl; trade.resolved = true;

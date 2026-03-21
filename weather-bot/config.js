@@ -1,3 +1,5 @@
+const path = require("path");
+
 module.exports = {
   cities: {
     KXHIGHNY: { name: "New York (Central Park)", lat: 40.7829, lon: -73.9654, seriesTicker: "KXHIGHNY" },
@@ -16,10 +18,10 @@ module.exports = {
   // Timing
   scanIntervalMs: 5 * 60 * 1000,  // 5 minutes
 
-  // File paths
-  tradeLogFile: "data/paper_trades.json",
-  calibrationFile: "data/calibration_log.json",
-  stateFile: "data/bot_state.json",
+  // File paths (resolved relative to this module, not CWD)
+  tradeLogFile: path.join(__dirname, "data/paper_trades.json"),
+  calibrationFile: path.join(__dirname, "data/calibration_log.jsonl"),
+  stateFile: path.join(__dirname, "data/bot_state.json"),
 
   // API endpoints
   openMeteoBase: "https://api.open-meteo.com/v1/ensemble",
