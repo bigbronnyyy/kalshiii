@@ -41,6 +41,9 @@ dotenv.config();
 const {
   PROXY_API_KEY,
   PORT = 3000,
+  REAL_TRADING_ENABLED,
+  KALSHI_API_KEY,
+  KALSHI_SECRET,
 } = process.env;
 
 const BASE_POLY_URL = "https://clob.polymarket.com";
@@ -221,7 +224,8 @@ app.get("/markets/movers", requireProxyApiKey, (req, res) => {
     const movers = getMovers(db, hours, minMove);
     res.json({ hours, min_move: minMove, count: movers.length, movers });
   } catch (err) {
-    res.status(500).json({ error: "db_error", message: err.message });
+    console.error("[markets/movers] error:", err.message);
+    res.json({ hours, min_move: minMove, count: 0, movers: [] });
   }
 });
 
@@ -311,8 +315,11 @@ app.get("/market/:ticker/reaction", requireProxyApiKey, (req, res) => {
 
 app.get("/db/status", (req, res) => {
   try {
-    res.json(getDbStatus(db));
+    const status = getDbStatus(db);
+    console.log("[db/status]", JSON.stringify(status));
+    res.json(status);
   } catch (err) {
+    console.error("[db/status] error:", err.message);
     res.status(500).json({ error: "db_error", message: err.message });
   }
 });
@@ -408,12 +415,32 @@ app.post("/weather/auto", requireProxyApiKey, (req, res) => {
   res.json({ auto: !!wxScanInterval, message: "No change" });
 });
 
-// ─── Trade execution (placeholder — wallet integration required) ─────────────
+// ─── Trade execution ──────────────────────────────────────────────────────────
+
+app.get("/weather/trading-status", requireProxyApiKey, (req, res) => {
+  const reasons = [];
+  if (!REAL_TRADING_ENABLED || REAL_TRADING_ENABLED !== "true") reasons.push("REAL_TRADING_ENABLED env var is not set to 'true'");
+  if (!KALSHI_API_KEY) reasons.push("KALSHI_API_KEY env var is not set");
+  if (!KALSHI_SECRET) reasons.push("KALSHI_SECRET env var is not set");
+  res.json({
+    mode: reasons.length === 0 ? "LIVE" : "PAPER",
+    ready: reasons.length === 0,
+    blockers: reasons,
+  });
+});
 
 app.post("/trade", requireProxyApiKey, (req, res) => {
+  if (!REAL_TRADING_ENABLED || REAL_TRADING_ENABLED !== "true") {
+    return res.status(403).json({ status: "blocked", message: "REAL_TRADING_ENABLED is not set to 'true'" });
+  }
+  if (!KALSHI_API_KEY || !KALSHI_SECRET) {
+    return res.status(403).json({ status: "blocked", message: "KALSHI_API_KEY and KALSHI_SECRET must be set" });
+  }
+  // TODO: Implement Kalshi order submission using KALSHI_API_KEY + KALSHI_SECRET
+  console.log("[trade] Real trade request received:", JSON.stringify(req.body));
   res.status(501).json({
-    status:  "not_implemented",
-    message: "Wallet integration required. Connect a Polymarket API key + private key to enable order submission.",
+    status: "not_implemented",
+    message: "Kalshi order submission not yet implemented. Credentials are configured — order execution code needs to be added.",
   });
 });
 

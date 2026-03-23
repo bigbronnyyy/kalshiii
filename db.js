@@ -1,14 +1,20 @@
 import Database from "better-sqlite3";
 import path from "path";
+import fs from "fs";
 
-const DB_PATH = process.env.DB_PATH || "polymarket.db";
+const DB_PATH = process.env.DB_PATH || "./data/kalshi.db";
 
 let _db = null;
 
 export function createDb(dbPath = DB_PATH) {
   if (_db) return _db;
 
-  const db = new Database(path.resolve(dbPath));
+  // Ensure the directory exists (survives Railway restarts with a volume mount)
+  const resolved = path.resolve(dbPath);
+  const dir = path.dirname(resolved);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+
+  const db = new Database(resolved);
 
   // Performance pragmas
   db.pragma("journal_mode = WAL");
