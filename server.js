@@ -51,7 +51,10 @@ const BASE_POLY_URL = "https://clob.polymarket.com";
 const app = express();
 app.use(express.json());
 app.use(express.static("public"));
-app.use(helmet());
+app.use(helmet({
+  contentSecurityPolicy: false,     // Allow inline styles/scripts in index.html
+  crossOriginEmbedderPolicy: false, // Allow loading external fonts/resources
+}));
 app.use(cors());
 app.use(morgan("combined"));
 

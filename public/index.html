@@ -680,11 +680,11 @@
 
 <div class="app">
   <div class="tabs">
-    <button class="tab-btn active" onclick="switchTab('scanner')">Scanner</button>
-    <button class="tab-btn" onclick="switchTab('deck')">Trade Deck</button>
-    <button class="tab-btn" onclick="switchTab('history')">History</button>
-    <button class="tab-btn" onclick="switchTab('chat')">Chat</button>
-    <button class="tab-btn" onclick="switchTab('weather')">Weather</button>
+    <button class="tab-btn active" onclick="switchTab('scanner', event)">Scanner</button>
+    <button class="tab-btn" onclick="switchTab('deck', event)">Trade Deck</button>
+    <button class="tab-btn" onclick="switchTab('history', event)">History</button>
+    <button class="tab-btn" onclick="switchTab('chat', event)">Chat</button>
+    <button class="tab-btn" onclick="switchTab('weather', event)">Weather</button>
   </div>
 
   <div class="content">
@@ -1047,7 +1047,7 @@
 </div>
 
 <script>
-const PROXY = "https://kalshiii-production.up.railway.app";
+const PROXY = window.location.origin;
 const PKEY = "super_random_password_12345678910";
 
 const EVD = {
@@ -1072,11 +1072,13 @@ const EVD = {
 let state = {};
 let historicalBase = 0.5;
 
-function switchTab(tab) {
+function switchTab(tab, evt) {
   document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
   document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
   document.getElementById(tab).classList.add('active');
-  event.target.classList.add('active');
+  // Find the correct tab button — evt.target may be a child element
+  const btn = evt ? evt.currentTarget : document.querySelector(`.tab-btn[onclick*="'${tab}'"]`);
+  if (btn) btn.classList.add('active');
 
   if (tab === 'scanner') runScan();
   if (tab === 'history') loadDBStatus();
@@ -1312,6 +1314,7 @@ function selectOpportunity(ticker, price) {
   document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
   document.getElementById('deck').classList.add('active');
   document.querySelectorAll('.tab-btn')[1].classList.add('active');
+  fetchTickerData(); // Auto-fetch market data when selecting from scanner
 }
 
 // Trade Deck
@@ -1499,7 +1502,7 @@ let dbPollTimer = null;
 
 async function loadDBStatus() {
   try {
-    const r = await fetch(`${PROXY}/db/status`);
+    const r = await fetch(`${PROXY}/db/status`, { headers: { 'x-proxy-api-key': PKEY } });
     const d = await r.json();
     document.getElementById('db-markets').textContent = d.markets || 0;
     document.getElementById('db-snapshots').textContent = d.snapshots || 0;
@@ -1510,9 +1513,11 @@ async function loadDBStatus() {
     });
     const movers = await mr.json();
     const tbody = document.getElementById('movers-body');
-    tbody.innerHTML = (movers.movers || []).slice(0, 10).map(m =>
-      `<tr><td>${m.ticker}</td><td>${m.title || ''}</td><td>${(m.price_move * 100).toFixed(1)}%</td><td>${m.price_move > 0 ? '↑' : '↓'}</td></tr>`
-    ).join('') || '<tr><td colspan="4">No movers yet</td></tr>';
+    tbody.innerHTML = (movers.movers || []).slice(0, 10).map(m => {
+      const dir = m.price_move >= 0 ? '↑' : '↓';
+      const cls = m.price_move >= 0 ? 'delta-pos' : 'delta-neg';
+      return `<tr><td>${m.ticker}</td><td>${escapeHtml(m.title || '')}</td><td class="${cls}">${(Math.abs(m.price_move) * 100).toFixed(1)}%</td><td class="${cls}">${dir}</td></tr>`;
+    }).join('') || '<tr><td colspan="4">No movers yet</td></tr>';
 
     // If no data yet, poll every 3s until data appears (up to 60s)
     if ((!d.markets || d.markets === 0) && !dbPollTimer) {
@@ -1535,7 +1540,9 @@ async function loadDBStatus() {
       dbPollTimer = null;
     }
   } catch(e) {
-    console.error('DB load error:', e);
+    document.getElementById('db-markets').textContent = 'Error';
+    document.getElementById('db-snapshots').textContent = '—';
+    document.getElementById('db-last').textContent = e.message;
   }
 }
 
@@ -1548,15 +1555,21 @@ async function loadPriceHistory() {
     });
     const d = await r.json();
     const tbody = document.getElementById('history-body');
-    tbody.innerHTML = (d.history || []).map(h =>
-      `<tr><td>${new Date(h.snapshot_time).toLocaleTimeString()}</td><td>${(h.yes_price * 100).toFixed(1)}%</td><td>${(h.yes_bid * 100).toFixed(1)}%</td><td>${(h.yes_ask * 100).toFixed(1)}%</td><td>${h.source || ''}</td></tr>`
-    ).join('') || '<tr><td colspan="5">No data</td></tr>';
+    tbody.innerHTML = (d.history || []).map(h => {
+      const price = h.yes_price != null ? (h.yes_price * 100).toFixed(1) + '%' : '—';
+      const bid   = h.yes_bid   != null ? (h.yes_bid * 100).toFixed(1) + '%'   : '—';
+      const ask   = h.yes_ask   != null ? (h.yes_ask * 100).toFixed(1) + '%'   : '—';
+      return `<tr><td>${new Date(h.snapshot_time).toLocaleTimeString()}</td><td>${price}</td><td>${bid}</td><td>${ask}</td><td>${h.source || ''}</td></tr>`;
+    }).join('') || '<tr><td colspan="5">No data</td></tr>';
   } catch(e) {
-    console.error('History load error:', e);
+    const tbody = document.getElementById('history-body');
+    tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:var(--red);padding:2rem;">Error loading history: ${escapeHtml(e.message)}</td></tr>`;
   }
 }
 
 // Chat
+let chatHistory = [];
+
 function addMessage(role, text) {
   const msg = document.createElement('div');
   msg.className = 'message ' + role;
@@ -1578,29 +1591,35 @@ async function sendMessage() {
 
   addMessage('user', msg);
   input.value = '';
+  chatHistory.push({ role: 'user', content: msg });
 
   try {
-    const prompt = `You are a Polymarket prediction market quant analyst. The user will ask you questions about markets, probabilities, strategies, and trade sizing. Answer concisely and accurately. Today: March 2026.
-
-User: ${msg}`;
+    // Build full conversation with system context as first user message
+    const systemMsg = { role: 'user', content: 'You are a Polymarket prediction market quant analyst. Answer questions about markets, probabilities, strategies, and trade sizing concisely and accurately. Today: March 2026.' };
+    const systemAck = { role: 'assistant', content: 'Understood. I\'m ready to help with market analysis, probability assessment, and trade sizing.' };
+    const messages = [systemMsg, systemAck, ...chatHistory];
 
     const res = await fetch(`${PROXY}/analyze`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-proxy-api-key': PKEY },
-      body: JSON.stringify({ prompt, model: 'claude-sonnet-4-6', max_tokens: 500 })
+      body: JSON.stringify({ messages, model: 'claude-sonnet-4-6', max_tokens: 500 })
     });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.message || 'Error');
+    if (!res.ok) throw new Error(data.message || data.error?.message || 'API error');
 
     const txt = (data.content || []).map(b => b.text || '').join('');
     addMessage('bot', txt);
+    chatHistory.push({ role: 'assistant', content: txt });
   } catch(e) {
-    addMessage('bot', '❌ Error: ' + e.message);
+    addMessage('bot', 'Error: ' + e.message);
   }
 }
 
 window.addEventListener('load', () => {
-  // Scanner starts only when user clicks START
+  // Pre-load DB status so History tab has data when opened
+  loadDBStatus();
+  // Refresh DB status every 30 seconds
+  setInterval(loadDBStatus, 30000);
 });
 
 // ─── Weather Paper Trader + Backtest ─────────────────────────────────────────
