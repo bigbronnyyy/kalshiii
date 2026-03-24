@@ -38,8 +38,9 @@ async function scan() {
 
       for (const market of markets) {
         const parsed = parseWeatherMarket(market);
-        if (parsed.bracketLow == null || !parsed.marketPrice) {
-          if (!parsed.marketPrice) console.log(`     [SKIP] ${parsed.ticker} | no market price (bracketLow=${parsed.bracketLow})`);
+        if (parsed.bracketLow == null || isNaN(parsed.bracketLow) || !parsed.marketPrice) {
+          if (!parsed.marketPrice) console.log(`     [SKIP] ${parsed.ticker} | no price (strike_type=${market.strike_type}, subtitle=${parsed.subtitle})`);
+          else console.log(`     [SKIP] ${parsed.ticker} | no bracket (bracketLow=${parsed.bracketLow})`);
           continue;
         }
 
@@ -62,7 +63,7 @@ async function scan() {
             if (isDupe) continue;
             const trade = { timestamp: ts, city: city.name, ticker: parsed.ticker, bracket: parsed.subtitle, side, ensembleProb: +prob.toFixed(3), marketPrice: +parsed.marketPrice.toFixed(3), edge: +Math.abs(edge).toFixed(3), contracts, cost, forecastDate: tomorrow.date, status: "PAPER", resolved: false };
 
-            console.log(`     [TRADE ENTRY] mode=PAPER | ${side} ${parsed.subtitle} | edge=${(Math.abs(edge)*100).toFixed(1)}% | Would need REAL_TRADING_ENABLED=true + KALSHI_API_KEY + KALSHI_SECRET to go live`);
+            console.log(`     [TRADE ENTRY] mode=PAPER | ${side} ${parsed.subtitle} [type=${parsed.type}] | edge=${(Math.abs(edge)*100).toFixed(1)}% | GEFS=${(prob*100).toFixed(0)}% vs Mkt=${(parsed.marketPrice*100).toFixed(0)}c`);
             appendTrade(trade);
             state.pending.push(trade);
             state.totalTrades++;
