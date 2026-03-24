@@ -9,7 +9,7 @@ module.exports = {
   },
 
   // Trading parameters
-  minEdge: 0.05,           // 5% minimum edge to trigger trade
+  minEdge: 0.08,           // 8% minimum edge to trigger trade
   kellyFraction: 0.15,     // 15% Kelly (conservative)
   maxPositionPct: 0.05,    // Max 5% of bankroll per trade
   maxTradeSize: 100,       // $100 hard cap per trade
