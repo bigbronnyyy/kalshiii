@@ -4,113 +4,409 @@ process.on("unhandledRejection", (err) => {
 
 const config = require("./config");
 const { fetchEnsembleForecast, extractDailyMaxFromEnsemble } = require("./services/ensemble");
-const { fetchOpenMarkets, parseWeatherMarket } = require("./services/kalshi");
-const { getActualHigh } = require("./services/nws");
-const { computeEnsembleProb, findEdge } = require("./engine/edge");
+const { fetchECMWF } = require("./services/ecmwf");
+const { fetchHRRR } = require("./services/hrrr");
+const { fetchMETAR } = require("./services/metar");
+const { fetchOpenMarkets, discoverWeatherSeries, parseWeatherMarket } = require("./services/kalshi");
+const { getActualHigh, checkKalshiResolution } = require("./services/nws");
+const { computeProbability, computeEnsembleProb, calcEV, findEdge } = require("./engine/edge");
 const { sizePosition } = require("./engine/kelly");
-const { generateReport } = require("./engine/calibration");
+const { runCalibration, getCalibratedSigma, generateReport } = require("./engine/calibration");
 const { loadState, saveState, appendTrade, appendCalibration } = require("./storage/logger");
+const { loadMarket, saveMarket, newMarket } = require("./storage/markets");
+const { sleep } = require("./utils/helpers");
 
+// ── Determine forecast horizon (D+0, D+1, D+2, etc.) ──
+function getHorizon(forecastDate) {
+  const now = new Date();
+  const target = new Date(forecastDate + "T23:59:59Z");
+  const hoursLeft = (target - now) / (1000 * 60 * 60);
+  if (hoursLeft < 24) return { label: "D+0", hoursLeft };
+  if (hoursLeft < 48) return { label: "D+1", hoursLeft };
+  return { label: `D+${Math.floor(hoursLeft / 24)}`, hoursLeft };
+}
+
+// ── Pick best forecast source for a city/date ──
+function pickBestForecast(cityConfig, horizon, forecasts) {
+  const { hrrr, ecmwf, metar } = forecasts;
+
+  // US cities on D+0/D+1: prefer HRRR
+  if (cityConfig.region === "us" && (horizon === "D+0" || horizon === "D+1") && hrrr != null) {
+    return { temp: hrrr, source: "hrrr" };
+  }
+  // All others: ECMWF
+  if (ecmwf != null) return { temp: ecmwf, source: "ecmwf" };
+  // Fallback to HRRR if ECMWF unavailable
+  if (hrrr != null) return { temp: hrrr, source: "hrrr" };
+  return { temp: null, source: null };
+}
+
+// ── Compute hours until market closes ──
+function hoursUntilClose(closeTime) {
+  if (!closeTime) return null;
+  const close = new Date(closeTime);
+  if (isNaN(close)) return null;
+  return (close - new Date()) / (1000 * 60 * 60);
+}
+
+// ── Full scan: fetch forecasts, evaluate markets, enter trades ──
 async function scan() {
   const state = loadState();
   const ts = new Date().toISOString();
 
-  console.log(`\n${"=".repeat(60)}`);
-  console.log(`  SCAN | ${ts} | Bankroll: $${state.bankroll.toFixed(2)} | W/L: ${state.wins}/${state.losses}`);
-  console.log(`${"=".repeat(60)}`);
+  console.log(`\n${"=".repeat(70)}`);
+  console.log(`  SCAN | ${ts} | Bankroll: $${state.bankroll.toFixed(2)} | W/L: ${state.wins}/${state.losses} | Pending: ${state.pending.length}`);
+  console.log(`${"=".repeat(70)}`);
 
-  for (const [key, city] of Object.entries(config.cities)) {
-    console.log(`\n  ${city.name}`);
+  // Discover active weather series from Kalshi
+  const seriesTickers = await discoverWeatherSeries();
+  console.log(`  Discovered ${seriesTickers.length} weather series: ${seriesTickers.join(", ")}`);
+
+  for (const seriesTicker of seriesTickers) {
+    const cityConfig = config.cities[seriesTicker];
+    if (!cityConfig) {
+      console.log(`\n  [SKIP] ${seriesTicker} — not in seed list (add to config.js)`);
+      continue;
+    }
+
+    console.log(`\n  ${cityConfig.name} (${seriesTicker})`);
 
     try {
-      const ensemble = await fetchEnsembleForecast(city.lat, city.lon);
-      const dailyMax = extractDailyMaxFromEnsemble(ensemble);
+      // ── Fetch all forecast sources in parallel ──
+      const [ensembleData, ecmwfData, hrrrData, metarTemp] = await Promise.all([
+        fetchEnsembleForecast(cityConfig.lat, cityConfig.lon, 3).catch(e => { console.log(`     [!] Ensemble: ${e.message}`); return null; }),
+        fetchECMWF(cityConfig.lat, cityConfig.lon, cityConfig.timezone).catch(e => { console.log(`     [!] ECMWF: ${e.message}`); return null; }),
+        cityConfig.region === "us"
+          ? fetchHRRR(cityConfig.lat, cityConfig.lon, cityConfig.timezone).catch(e => { console.log(`     [!] HRRR: ${e.message}`); return null; })
+          : Promise.resolve(null),
+        cityConfig.station
+          ? fetchMETAR(cityConfig.station).catch(() => null)
+          : Promise.resolve(null),
+      ]);
+
+      const dailyMax = ensembleData ? extractDailyMaxFromEnsemble(ensembleData) : null;
       if (!dailyMax?.length) { console.log("     [!] No ensemble data"); continue; }
 
-      const tomorrow = dailyMax.length > 1 ? dailyMax[1] : dailyMax[0];
-      const mean = tomorrow.maxTemps.reduce((a, b) => a + b, 0) / tomorrow.maxTemps.length;
-      const std = Math.sqrt(tomorrow.maxTemps.reduce((a, b) => a + (b - mean) ** 2, 0) / tomorrow.maxTemps.length);
-      console.log(`     Ensemble: ${tomorrow.memberCount} members | Mean: ${mean.toFixed(1)}F | Std: ${std.toFixed(1)}F`);
-
-      const markets = await fetchOpenMarkets(city.seriesTicker);
+      // Fetch open markets from Kalshi
+      const markets = await fetchOpenMarkets(seriesTicker);
       if (!markets.length) { console.log("     [!] No open markets"); continue; }
-      console.log(`     Markets: ${markets.length} brackets`);
+      console.log(`     Markets: ${markets.length} brackets | Sources: ensemble${ecmwfData ? "+ECMWF" : ""}${hrrrData ? "+HRRR" : ""}${metarTemp != null ? "+METAR(" + metarTemp + "F)" : ""}`);
 
       for (const market of markets) {
         const parsed = parseWeatherMarket(market);
         if (parsed.bracketLow == null || isNaN(parsed.bracketLow) || !parsed.marketPrice) {
-          if (!parsed.marketPrice) console.log(`     [SKIP] ${parsed.ticker} | no price (strike_type=${market.strike_type}, subtitle=${parsed.subtitle})`);
-          else console.log(`     [SKIP] ${parsed.ticker} | no bracket (bracketLow=${parsed.bracketLow})`);
-          continue;
+          continue; // silently skip unparseable
         }
 
-        const prob = computeEnsembleProb(tomorrow.maxTemps, parsed.bracketLow, parsed.bracketHigh, parsed.type);
-        const edge = findEdge(prob, parsed.marketPrice);
+        // ── Filter: max price ──
+        if (parsed.marketPrice > config.maxPrice) continue;
 
-        appendCalibration({ timestamp: ts, city: city.name, ticker: parsed.ticker, bracket: parsed.subtitle, ensembleProb: +prob.toFixed(3), marketPrice: +parsed.marketPrice.toFixed(3), edge: +edge.toFixed(3), memberCount: tomorrow.memberCount, forecastDate: tomorrow.date });
+        // ── Filter: volume ──
+        if (parsed.volume < config.minVolume) continue;
 
-        if (Math.abs(edge) >= config.minEdge) {
-          const side = edge > 0 ? "YES" : "NO";
-          const tradeProb = edge > 0 ? prob : 1 - prob;
-          const tradePrice = edge > 0 ? parsed.marketPrice : 1 - parsed.marketPrice;
-          const posSize = sizePosition(tradeProb, tradePrice, state.bankroll);
+        // ── Filter: spread/slippage ──
+        if (parsed.spread != null && parsed.spread > config.maxSlippage) continue;
 
-          if (posSize > 0.5) {
-            const contracts = Math.floor(posSize / tradePrice);
-            const cost = +(contracts * tradePrice).toFixed(2);
-            const dupeKey = `${city.name}|${parsed.ticker}|${tomorrow.date}|${side}`;
-            const isDupe = state.pending.some(t => `${t.city}|${t.ticker}|${t.forecastDate}|${t.side}` === dupeKey);
-            if (isDupe) continue;
-            const trade = { timestamp: ts, city: city.name, ticker: parsed.ticker, bracket: parsed.subtitle, side, ensembleProb: +prob.toFixed(3), marketPrice: +parsed.marketPrice.toFixed(3), edge: +Math.abs(edge).toFixed(3), contracts, cost, forecastDate: tomorrow.date, status: "PAPER", resolved: false };
+        // ── Filter: time horizon ──
+        const hrsLeft = hoursUntilClose(parsed.closeTime);
+        if (hrsLeft != null && (hrsLeft < config.minHours || hrsLeft > config.maxHours)) continue;
 
-            console.log(`     [TRADE ENTRY] mode=PAPER | ${side} ${parsed.subtitle} [type=${parsed.type}] | edge=${(Math.abs(edge)*100).toFixed(1)}% | GEFS=${(prob*100).toFixed(0)}% vs Mkt=${(parsed.marketPrice*100).toFixed(0)}c`);
-            appendTrade(trade);
-            state.pending.push(trade);
-            state.totalTrades++;
-            console.log(`     >> ${side} ${parsed.subtitle} @ ${(parsed.marketPrice * 100).toFixed(0)}c | GEFS: ${(prob * 100).toFixed(0)}% | Edge: ${(Math.abs(edge) * 100).toFixed(0)}% | ${contracts} contracts ($${cost})`);
-          }
-        }
+        // ── Match forecast date to market ──
+        // Try to extract date from ticker (e.g., KXHIGHNY-26MAR25-B58 → 2026-03-26)
+        const forecastDate = extractDateFromTicker(parsed.ticker) || (dailyMax.length > 1 ? dailyMax[1].date : dailyMax[0].date);
+        const dayData = dailyMax.find(d => d.date === forecastDate) || dailyMax[dailyMax.length > 1 ? 1 : 0];
+
+        if (!dayData || dayData.mean == null) continue;
+
+        const horizon = getHorizon(forecastDate);
+
+        // ── Get point forecasts ──
+        const forecasts = {
+          hrrr: hrrrData?.[forecastDate] ?? null,
+          ecmwf: ecmwfData?.[forecastDate] ?? null,
+          metar: metarTemp,
+        };
+        const best = pickBestForecast(cityConfig, horizon.label, forecasts);
+
+        // ── Determine sigma: calibrated if available, else ensemble std ──
+        const calibratedSigma = best.source ? getCalibratedSigma(seriesTicker, best.source) : null;
+        const sigma = calibratedSigma ?? dayData.std ?? 3.0; // default 3°F if nothing else
+
+        // Use best point forecast as mean, or ensemble mean as fallback
+        const forecastMean = best.temp ?? dayData.mean;
+
+        // ── Compute probability via normal CDF ──
+        const prob = computeProbability(forecastMean, sigma, parsed.bracketLow, parsed.bracketHigh, parsed.type);
+
+        // Also compute raw ensemble prob for logging
+        const rawProb = computeEnsembleProb(dayData.maxTemps, parsed.bracketLow, parsed.bracketHigh, parsed.type);
+        const rawEdge = findEdge(rawProb, parsed.marketPrice);
+
+        // Use ask price for entry (honest simulation)
+        const entryPrice = parsed.askPrice || parsed.marketPrice;
+        const ev = calcEV(prob, entryPrice);
+
+        // ── Log calibration data ──
+        appendCalibration({
+          timestamp: ts,
+          city: cityConfig.name,
+          citySlug: seriesTicker,
+          ticker: parsed.ticker,
+          bracket: parsed.subtitle,
+          type: parsed.type,
+          ensembleProb: +rawProb.toFixed(3),
+          cdfProb: +prob.toFixed(3),
+          marketPrice: +parsed.marketPrice.toFixed(3),
+          edge: +rawEdge.toFixed(3),
+          ev: +ev.toFixed(4),
+          forecastMean: +forecastMean.toFixed(1),
+          sigma: +sigma.toFixed(2),
+          source: best.source,
+          memberCount: dayData.memberCount,
+          forecastDate,
+        });
+
+        // ── Save forecast snapshot to per-market file ──
+        const slug = seriesTicker.toLowerCase();
+        let mkt = loadMarket(slug, forecastDate) || newMarket(slug, cityConfig.name, forecastDate);
+        mkt.forecast_snapshots.push({
+          ts,
+          horizon: horizon.label,
+          hours_left: +(horizon.hoursLeft.toFixed(1)),
+          ecmwf: forecasts.ecmwf,
+          hrrr: forecasts.hrrr,
+          metar: forecasts.metar,
+          ensemble_mean: dayData.mean,
+          ensemble_std: dayData.std,
+          best: best.temp,
+          best_source: best.source,
+        });
+        mkt.market_snapshots.push({
+          ts,
+          ticker: parsed.ticker,
+          price: parsed.marketPrice,
+          ask: parsed.askPrice,
+          bid: parsed.bidPrice,
+          spread: parsed.spread,
+          volume: parsed.volume,
+        });
+        saveMarket(mkt);
+
+        // ── ENTRY FILTERS ──
+        // Only trade YES side on underpriced buckets with positive EV
+        if (prob <= parsed.marketPrice) continue; // no edge
+        if (ev < config.minEV) continue;          // EV too low
+
+        // ── Position sizing via Kelly ──
+        const posSize = sizePosition(prob, entryPrice, state.bankroll);
+        if (posSize < 0.50) continue; // too small
+
+        const contracts = Math.floor(posSize / entryPrice);
+        if (contracts < 1) continue;
+        const cost = +(contracts * entryPrice).toFixed(2);
+
+        // ── Duplicate check ──
+        const dupeKey = `${cityConfig.name}|${parsed.ticker}|${forecastDate}`;
+        const isDupe = state.pending.some(t => `${t.city}|${t.ticker}|${t.forecastDate}` === dupeKey);
+        if (isDupe) continue;
+
+        // ── Enter paper trade ──
+        const trade = {
+          timestamp: ts,
+          city: cityConfig.name,
+          citySlug: seriesTicker,
+          ticker: parsed.ticker,
+          bracket: parsed.subtitle,
+          side: "YES",
+          prob: +prob.toFixed(3),
+          ensembleProb: +rawProb.toFixed(3),
+          marketPrice: +parsed.marketPrice.toFixed(3),
+          entryPrice: +entryPrice.toFixed(3),
+          ev: +ev.toFixed(4),
+          edge: +Math.abs(rawEdge).toFixed(3),
+          contracts,
+          cost,
+          forecastDate,
+          forecastMean: +forecastMean.toFixed(1),
+          sigma: +sigma.toFixed(2),
+          source: best.source,
+          status: "PAPER",
+          resolved: false,
+          peakPrice: entryPrice,
+        };
+
+        console.log(`     [TRADE] YES ${parsed.subtitle} [${parsed.type}] @ ${(entryPrice * 100).toFixed(0)}c | Prob=${(prob * 100).toFixed(1)}% | EV=${(ev * 100).toFixed(1)}% | ${contracts}x ($${cost}) | src=${best.source}`);
+        appendTrade(trade);
+        state.pending.push(trade);
+        state.totalTrades++;
       }
     } catch (err) {
       console.error(`     [ERR] ${err.message}`);
     }
 
-    await new Promise(r => setTimeout(r, 1000)); // rate limit
+    await sleep(500); // rate limit between cities
   }
 
-  // Check resolutions
-  const stillPending = [];
+  // ── Check resolutions ──
+  await resolveClosedTrades(state);
+
+  // ── Run calibration if we have enough data ──
+  runCalibration();
+
+  saveState(state);
+  console.log(`\n  Scan complete. Bankroll: $${state.bankroll.toFixed(2)} | Pending: ${state.pending.length} | W/L: ${state.wins}/${state.losses}\n`);
+}
+
+// ── Monitor pass: check stops on pending positions (no new entries) ──
+async function monitor() {
+  const state = loadState();
+  if (state.pending.length === 0) return;
+
+  const ts = new Date().toISOString();
+  let changed = false;
+
   for (const trade of state.pending) {
-    if (new Date() < new Date(trade.forecastDate)) { stillPending.push(trade); continue; }
+    try {
+      // Fetch current market price
+      const markets = await fetchOpenMarkets(trade.citySlug || "");
+      const market = markets.find(m => m.ticker === trade.ticker);
+      if (!market) continue;
+
+      const parsed = parseWeatherMarket(market);
+      const currentPrice = parsed.bidPrice || parsed.marketPrice;
+      if (!currentPrice) continue;
+
+      // Track peak price for trailing stop
+      if (currentPrice > (trade.peakPrice || trade.entryPrice)) {
+        trade.peakPrice = currentPrice;
+        changed = true;
+      }
+
+      // ── Stop loss: price dropped 20% from entry ──
+      if (currentPrice <= trade.entryPrice * 0.80) {
+        const pnl = +(trade.contracts * (currentPrice - trade.entryPrice)).toFixed(2);
+        console.log(`  [STOP-LOSS] ${trade.city} ${trade.bracket} | Entry: ${(trade.entryPrice * 100).toFixed(0)}c → ${(currentPrice * 100).toFixed(0)}c | P&L: $${pnl}`);
+        trade.pnl = pnl;
+        trade.resolved = true;
+        trade.won = false;
+        trade.closeReason = "stop_loss";
+        state.bankroll += pnl;
+        state.losses++;
+        state.resolved.push(trade);
+        changed = true;
+        continue;
+      }
+
+      // ── Trailing stop: price rose 20%+ then fell back to entry ──
+      if (trade.peakPrice >= trade.entryPrice * 1.20 && currentPrice <= trade.entryPrice) {
+        const pnl = 0;
+        console.log(`  [TRAIL-STOP] ${trade.city} ${trade.bracket} | Peak: ${(trade.peakPrice * 100).toFixed(0)}c → ${(currentPrice * 100).toFixed(0)}c | Breakeven`);
+        trade.pnl = pnl;
+        trade.resolved = true;
+        trade.won = false;
+        trade.closeReason = "trailing_stop";
+        state.resolved.push(trade);
+        changed = true;
+        continue;
+      }
+    } catch (e) {
+      // Skip on error
+    }
+  }
+
+  // Remove resolved trades from pending
+  state.pending = state.pending.filter(t => !t.resolved);
+  if (changed) saveState(state);
+}
+
+// ── Resolve trades that have passed their forecast date ──
+async function resolveClosedTrades(state) {
+  const stillPending = [];
+
+  for (const trade of state.pending) {
+    if (trade.resolved) continue;
+
+    // Only resolve if forecast date has passed
+    const forecastEnd = new Date(trade.forecastDate + "T23:59:59Z");
+    if (new Date() < forecastEnd) { stillPending.push(trade); continue; }
+
     const cityKey = Object.keys(config.cities).find(k => config.cities[k].name === trade.city);
     if (!cityKey) { stillPending.push(trade); continue; }
     const city = config.cities[cityKey];
-    const actual = await getActualHigh(city.lat, city.lon, trade.forecastDate);
-    if (actual === null) { stillPending.push(trade); continue; }
 
-    const parsed = parseWeatherMarket({ ticker: trade.ticker, subtitle: trade.bracket });
-    let inBracket;
-    if (parsed.type === "above") inBracket = actual >= parsed.bracketLow;
-    else if (parsed.type === "below") inBracket = actual <= parsed.bracketHigh;
-    else inBracket = actual >= parsed.bracketLow && actual <= parsed.bracketHigh;
+    // Try NWS first for actual temp
+    let actual = await getActualHigh(city.lat, city.lon, trade.forecastDate);
 
-    const won = trade.side === "YES" ? inBracket : !inBracket;
-    const payout = trade.side === "YES"
-      ? trade.contracts * (1 - trade.marketPrice)
-      : trade.contracts * trade.marketPrice;
+    // Fallback: check Kalshi market resolution
+    let kalshiResult = null;
+    if (actual === null) {
+      kalshiResult = await checkKalshiResolution(trade.ticker);
+    }
+
+    if (actual === null && kalshiResult === null) {
+      // Can't resolve yet — keep pending (NWS may not have data yet)
+      stillPending.push(trade);
+      continue;
+    }
+
+    // Determine win/loss
+    let won;
+    if (actual !== null) {
+      const parsed = parseWeatherMarket({ ticker: trade.ticker, subtitle: trade.bracket });
+      let inBracket;
+      if (parsed.type === "above") inBracket = actual >= parsed.bracketLow;
+      else if (parsed.type === "below") inBracket = actual <= parsed.bracketHigh;
+      else inBracket = actual >= parsed.bracketLow && actual <= parsed.bracketHigh;
+      won = trade.side === "YES" ? inBracket : !inBracket;
+    } else {
+      won = kalshiResult === "WIN";
+    }
+
+    const payout = trade.contracts * (1 - trade.entryPrice);
     const pnl = won ? +payout.toFixed(2) : -trade.cost;
     state.bankroll += pnl;
     if (won) state.wins++; else state.losses++;
-    trade.actualTemp = actual; trade.won = won; trade.pnl = pnl; trade.resolved = true;
+    trade.actualTemp = actual;
+    trade.won = won;
+    trade.pnl = pnl;
+    trade.resolved = true;
+    trade.closeReason = "resolution";
     state.resolved.push(trade);
-    console.log(`  ${won ? "[WIN]" : "[LOSS]"} ${trade.city} ${trade.bracket} | Actual: ${actual}F | P&L: ${pnl >= 0 ? "+" : ""}$${pnl}`);
+
+    // Update per-market file
+    const slug = (trade.citySlug || cityKey).toLowerCase();
+    const mkt = loadMarket(slug, trade.forecastDate);
+    if (mkt) {
+      mkt.status = "resolved";
+      mkt.actual_temp = actual;
+      mkt.resolved_outcome = won ? "WIN" : "LOSS";
+      mkt.pnl = pnl;
+      saveMarket(mkt);
+    }
+
+    console.log(`  ${won ? "[WIN]" : "[LOSS]"} ${trade.city} ${trade.bracket} | Actual: ${actual != null ? actual + "F" : "N/A (Kalshi:" + kalshiResult + ")"} | P&L: ${pnl >= 0 ? "+" : ""}$${pnl}`);
   }
+
   state.pending = stillPending;
-  saveState(state);
 }
 
+// ── Extract date from Kalshi ticker (e.g., KXHIGHNY-26MAR25-B58 → 2026-03-26) ──
+function extractDateFromTicker(ticker) {
+  const match = ticker.match(/-(\d{2})([A-Z]{3})(\d{2})-/);
+  if (!match) return null;
+
+  const [, day, monthStr, yearShort] = match;
+  const months = { JAN: "01", FEB: "02", MAR: "03", APR: "04", MAY: "05", JUN: "06", JUL: "07", AUG: "08", SEP: "09", OCT: "10", NOV: "11", DEC: "12" };
+  const month = months[monthStr];
+  if (!month) return null;
+
+  return `20${yearShort}-${month}-${day}`;
+}
+
+// ── Main entry point ──
 async function main() {
   const cmd = process.argv[2];
+
   if (cmd === "stats") {
     const s = loadState();
     const pnl = s.bankroll - config.startingBankroll;
@@ -118,12 +414,30 @@ async function main() {
     console.log(`\nBankroll: $${s.bankroll.toFixed(2)} | P&L: ${pnl >= 0 ? "+" : ""}$${pnl.toFixed(2)} (${(pnl / config.startingBankroll * 100).toFixed(1)}%) | W/L: ${s.wins}/${s.losses} (${wr}%) | Pending: ${s.pending.length}`);
     return;
   }
+
   if (cmd === "calibration") { generateReport(); return; }
+
+  if (cmd === "reset") {
+    const { resetAllData } = require("./storage/logger");
+    resetAllData();
+    console.log("All data reset to fresh state.");
+    return;
+  }
+
   if (cmd === "once") { await scan(); return; }
 
-  console.log(`\nKalshi Weather Paper Trader | Edge: ${config.minEdge * 100}% | Kelly: ${config.kellyFraction * 100}% | Interval: ${config.scanIntervalMs / 1000}s\n`);
+  console.log(`\nKalshi Weather Paper Trader v2.0`);
+  console.log(`  EV threshold: ${config.minEV * 100}% | Kelly: ${config.kellyFraction * 100}% | Max bet: $${config.maxBet}`);
+  console.log(`  Max price: ${config.maxPrice * 100}c | Min volume: $${config.minVolume} | Max slippage: ${config.maxSlippage * 100}%`);
+  console.log(`  Scan: every ${config.scanInterval}s | Monitor: every ${config.monitorInterval}s\n`);
+
   await scan();
+
+  // Full scan every scanInterval
   setInterval(() => scan().catch(console.error), config.scanIntervalMs);
+
+  // Quick monitor pass every monitorInterval (stop checks only)
+  setInterval(() => monitor().catch(console.error), config.monitorIntervalMs);
 }
 
 // Only auto-start when run directly (not when imported by server.js)
@@ -131,4 +445,4 @@ if (require.main === module) {
   main().catch(console.error);
 }
 
-module.exports = { scan };
+module.exports = { scan, monitor };

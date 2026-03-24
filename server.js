@@ -18,8 +18,11 @@ const weatherBot = require("./weather-bot/index.js");
 
 // ─── Weather bot server-side scanner state ────────────────────────────────────
 let wxScanInterval = null;
+let wxMonitorInterval = null;
 let wxScanRunning = false;
 let wxLastScan = null;
+
+const wxConfig = require("./weather-bot/config.js");
 
 async function runServerScan() {
   if (wxScanRunning) return { skipped: true, reason: "scan_already_running" };
@@ -33,6 +36,15 @@ async function runServerScan() {
     return { success: false, error: err.message };
   } finally {
     wxScanRunning = false;
+  }
+}
+
+async function runServerMonitor() {
+  if (wxScanRunning) return;
+  try {
+    await weatherBot.monitor();
+  } catch (err) {
+    console.error("[weather-bot] monitor error:", err.message);
   }
 }
 
@@ -389,6 +401,31 @@ app.get("/weather/trades", requireProxyApiKey, (req, res) => {
   }
 });
 
+app.get("/weather/markets", requireProxyApiKey, (req, res) => {
+  try {
+    const marketsDir = path.join(__dirname, "weather-bot/data/markets");
+    if (!fs.existsSync(marketsDir)) return res.json([]);
+    const files = fs.readdirSync(marketsDir).filter(f => f.endsWith(".json"));
+    const markets = files.map(f => {
+      try { return JSON.parse(fs.readFileSync(path.join(marketsDir, f), "utf8")); }
+      catch (e) { return null; }
+    }).filter(Boolean);
+    res.json(markets);
+  } catch (e) {
+    res.json([]);
+  }
+});
+
+app.get("/weather/calibration", requireProxyApiKey, (req, res) => {
+  try {
+    const file = path.join(__dirname, "weather-bot/data/calibration.json");
+    if (!fs.existsSync(file)) return res.json({});
+    res.json(JSON.parse(fs.readFileSync(file, "utf8")));
+  } catch (e) {
+    res.json({});
+  }
+});
+
 // ─── Weather bot server-side scan control ─────────────────────────────────────
 
 app.post("/weather/scan", requireProxyApiKey, async (req, res) => {
@@ -405,13 +442,16 @@ app.post("/weather/auto", requireProxyApiKey, (req, res) => {
 
   if (enabled && !wxScanInterval) {
     runServerScan();
-    wxScanInterval = setInterval(() => runServerScan(), 5 * 60 * 1000);
-    return res.json({ auto: true, message: "Auto-scan started (5m interval)" });
+    // Full scan every hour, monitor every 10 min
+    wxScanInterval = setInterval(() => runServerScan(), wxConfig.scanIntervalMs);
+    wxMonitorInterval = setInterval(() => runServerMonitor(), wxConfig.monitorIntervalMs);
+    return res.json({ auto: true, message: `Auto-scan started (scan: ${wxConfig.scanInterval}s, monitor: ${wxConfig.monitorInterval}s)` });
   }
 
   if (!enabled && wxScanInterval) {
     clearInterval(wxScanInterval);
     wxScanInterval = null;
+    if (wxMonitorInterval) { clearInterval(wxMonitorInterval); wxMonitorInterval = null; }
     return res.json({ auto: false, message: "Auto-scan stopped" });
   }
 

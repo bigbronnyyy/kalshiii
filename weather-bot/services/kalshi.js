@@ -1,22 +1,50 @@
 const config = require("../config");
 
+// ── Fetch open markets for a given series ticker ──
 async function fetchOpenMarkets(seriesTicker) {
   const url = `${config.kalshiBase}/markets?series_ticker=${seriesTicker}&status=open&limit=100`;
-  const response = await fetch(url);
+  const response = await fetch(url, { signal: AbortSignal.timeout(10000) });
   if (!response.ok) throw new Error(`Kalshi error: ${response.status}`);
   const data = await response.json();
   return data.markets || [];
 }
 
+// ── Discover all active weather series tickers from Kalshi ──
+async function discoverWeatherSeries() {
+  const url = `${config.kalshiBase}/markets?status=open&limit=200&series_ticker=KXHIGH`;
+  try {
+    const response = await fetch(url, { signal: AbortSignal.timeout(10000) });
+    if (!response.ok) return Object.keys(config.cities);
+    const data = await response.json();
+    const markets = data.markets || [];
+
+    // Extract unique series tickers
+    const tickers = new Set();
+    for (const m of markets) {
+      if (m.series_ticker && m.series_ticker.startsWith("KXHIGH")) {
+        tickers.add(m.series_ticker);
+      }
+    }
+
+    // Merge with known cities
+    for (const key of Object.keys(config.cities)) {
+      tickers.add(key);
+    }
+
+    return [...tickers];
+  } catch (e) {
+    console.warn(`  [!] Discovery failed: ${e.message}, using seed list`);
+    return Object.keys(config.cities);
+  }
+}
+
+// ── Parse a Kalshi weather market into a structured bracket ──
 function parseWeatherMarket(market) {
   const subtitle = market.subtitle || "";
   const ticker = market.ticker || "";
   let bracketLow = null, bracketHigh = null, type = "bracket";
 
   // ── Step 1: Use Kalshi's structured strike_type field (most reliable) ──
-  // strike_type: "greater" → YES if temp ≥ floor_strike
-  // strike_type: "less"    → YES if temp < cap_strike (or ≤)
-  // strike_type: "between" → YES if floor_strike ≤ temp ≤ cap_strike
   if (market.strike_type) {
     const st = market.strike_type.toLowerCase();
     if (st === "greater" || st === "greater_equal" || st === "above") {
@@ -35,8 +63,6 @@ function parseWeatherMarket(market) {
   }
 
   // ── Step 2: Fallback — parse subtitle text ──
-  // Handle formats: "49° or below", "49°F or below", "49 or below",
-  //                 "77° or higher", "75° to 79°", etc.
   if (bracketLow === null || isNaN(bracketLow)) {
     const rangeMatch = subtitle.match(/(\d+)[°\u00b0\u02da]?F?\s*to\s*(\d+)/i);
     const aboveMatch = subtitle.match(/(\d+)[°\u00b0\u02da]?F?\s*or\s*(higher|above|more)/i);
@@ -61,7 +87,6 @@ function parseWeatherMarket(market) {
   if (bracketLow === null && market.floor_strike != null) {
     bracketLow = parseFloat(market.floor_strike);
     bracketHigh = market.cap_strike != null ? parseFloat(market.cap_strike) : 200;
-    // Infer type from subtitle keywords when strike_type is missing
     const subLower = subtitle.toLowerCase();
     if (subLower.includes("below") || subLower.includes("lower") || subLower.includes("or less")) {
       type = "below";
@@ -74,7 +99,7 @@ function parseWeatherMarket(market) {
     }
   }
 
-  // ── Step 4: Fallback — parse from ticker (e.g. KXHIGHNY-26MAR25-B58, T65) ──
+  // ── Step 4: Fallback — parse from ticker ──
   if (bracketLow === null) {
     const bMatch = ticker.match(/B(\d+\.?\d*)/);
     const tMatch = ticker.match(/T(\d+\.?\d*)/);
@@ -84,7 +109,6 @@ function parseWeatherMarket(market) {
       type = "bracket";
     } else if (tMatch) {
       const threshold = parseFloat(tMatch[1]);
-      // Check subtitle for direction (default to "above" if unclear)
       const subLower = subtitle.toLowerCase();
       if (subLower.includes("below") || subLower.includes("lower") || subLower.includes("or less")) {
         bracketLow = -50;
@@ -98,11 +122,10 @@ function parseWeatherMarket(market) {
     }
   }
 
-  // ── Step 5: Final safety — if subtitle clearly says direction, override ──
+  // ── Step 5: Final safety — subtitle overrides contradictions ──
   if (type !== "bracket") {
     const subLower = subtitle.toLowerCase();
     if ((subLower.includes("or below") || subLower.includes("or lower")) && type !== "below") {
-      // Subtitle says "below" but we parsed as "above" — fix it
       const threshold = bracketLow > 0 ? bracketLow : bracketHigh;
       bracketLow = -50;
       bracketHigh = threshold;
@@ -115,20 +138,44 @@ function parseWeatherMarket(market) {
     }
   }
 
-  // ── Extract best available price ──
-  // Kalshi API v2 returns dollar-denominated string fields (e.g. "0.56")
-  let marketPrice = null;
+  // ── Extract prices: ask (entry), bid (exit), and spread ──
+  let askPrice = null, bidPrice = null, marketPrice = null;
+
+  const yad = parseFloat(market.yes_ask_dollars);
   const ybd = parseFloat(market.yes_bid_dollars);
   const lpd = parseFloat(market.last_price_dollars);
-  const yad = parseFloat(market.yes_ask_dollars);
+
+  if (yad > 0 && yad < 1) askPrice = yad;
+  if (ybd > 0 && ybd < 1) bidPrice = ybd;
+
+  // Best available price for display/logging
   if (ybd > 0 && ybd < 1) marketPrice = ybd;
   else if (lpd > 0 && lpd < 1) marketPrice = lpd;
   else if (yad > 0 && yad < 1) marketPrice = yad;
-  // Legacy integer cent fields (deprecated but handle just in case)
+  // Legacy integer cent fields
   else if (market.yes_bid > 0 && market.yes_bid < 100) marketPrice = market.yes_bid / 100;
   else if (market.last_price > 0 && market.last_price < 100) marketPrice = market.last_price / 100;
 
-  return { ticker, subtitle, type, bracketLow, bracketHigh, marketPrice, volume: parseFloat(market.volume_fp || market.volume || 0), eventTicker: market.event_ticker };
+  // Spread = ask - bid (if both available)
+  const spread = (askPrice != null && bidPrice != null) ? +(askPrice - bidPrice).toFixed(4) : null;
+
+  // ── Close time / expiration ──
+  const closeTime = market.close_time || market.expiration_time || null;
+
+  return {
+    ticker,
+    subtitle,
+    type,
+    bracketLow,
+    bracketHigh,
+    marketPrice,
+    askPrice,
+    bidPrice,
+    spread,
+    closeTime,
+    volume: parseFloat(market.volume_fp || market.volume || 0),
+    eventTicker: market.event_ticker,
+  };
 }
 
-module.exports = { fetchOpenMarkets, parseWeatherMarket };
+module.exports = { fetchOpenMarkets, discoverWeatherSeries, parseWeatherMarket };
