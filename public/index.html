@@ -680,207 +680,13 @@
 
 <div class="app">
   <div class="tabs">
-    <button class="tab-btn active" onclick="switchTab('scanner', event)">Scanner</button>
-    <button class="tab-btn" onclick="switchTab('deck', event)">Trade Deck</button>
+    <button class="tab-btn active" onclick="switchTab('weather', event)">Weather</button>
     <button class="tab-btn" onclick="switchTab('history', event)">History</button>
-    <button class="tab-btn" onclick="switchTab('chat', event)">Chat</button>
-    <button class="tab-btn" onclick="switchTab('weather', event)">Weather</button>
   </div>
 
   <div class="content">
 
-    <!-- TAB 0: SCANNER -->
-    <div id="scanner" class="tab-content active">
-      <h2 style="margin-bottom: 0.5rem; font-size: 18px;">Edge Scanner</h2>
-      <p style="font-size: 12px; color: var(--text-dim); margin-bottom: 1.5rem;">
-        Three models: <strong style="color:var(--text)">Mispricing</strong> (|p_model − p_market| &gt; threshold) ·
-        <strong style="color:var(--text)">Sizing</strong> (position = bankroll × k × |edge|) ·
-        <strong style="color:var(--text)">Reaction</strong> (post-large-trade 15m delta)
-      </p>
 
-      <div class="scanner-controls">
-        <div>
-          <label style="display: block; font-size: 11px; color: var(--text-dim); margin-bottom: 0.5rem; text-transform: uppercase;">Window (hours)</label>
-          <input type="number" id="scan-hours" value="4" min="1" max="24" />
-        </div>
-        <div>
-          <label style="display: block; font-size: 11px; color: var(--text-dim); margin-bottom: 0.5rem; text-transform: uppercase;">Min edge (%)</label>
-          <input type="number" id="scan-min-edge" value="3" min="0.5" max="20" step="0.5" />
-        </div>
-        <div>
-          <label style="display: block; font-size: 11px; color: var(--text-dim); margin-bottom: 0.5rem; text-transform: uppercase;">Bankroll ($)</label>
-          <input type="number" id="scan-bankroll" placeholder="e.g. 1000" min="0" />
-        </div>
-        <div>
-          <label style="display: block; font-size: 11px; color: var(--text-dim); margin-bottom: 0.5rem; text-transform: uppercase;">k (safety mult)</label>
-          <input type="number" id="scan-k" value="0.25" min="0.05" max="1" step="0.05" />
-        </div>
-        <div>
-          <label style="display: block; font-size: 11px; color: var(--text-dim); margin-bottom: 0.5rem; text-transform: uppercase;">Interval (sec)</label>
-          <input type="number" id="scan-interval" value="30" min="5" max="300" />
-        </div>
-        <button class="btn-scan" id="scan-toggle-btn" onclick="toggleScan()">START</button>
-      </div>
-
-      <div class="scanner-status" id="scan-status">
-        <span class="status-dot"></span>
-        <span>Ready — click START to begin continuous scanning</span>
-      </div>
-
-      <table id="scanner-table">
-        <thead><tr>
-          <th>Status</th>
-          <th>Ticker</th>
-          <th>Title</th>
-          <th>p_market</th>
-          <th>p_model</th>
-          <th>Edge %</th>
-          <th>Signal</th>
-          <th>Conf</th>
-          <th>Pos Size</th>
-          <th>15m Δ</th>
-          <th>Spread</th>
-          <th>First Seen</th>
-          <th>Last Active</th>
-        </tr></thead>
-        <tbody id="scanner-body"><tr><td colspan="13" style="text-align: center; color: var(--text-dim); padding: 2rem;">Click START to begin scanning for opportunities</td></tr></tbody>
-      </table>
-    </div>
-
-    <!-- TAB 1: TRADE DECK -->
-    <div id="deck" class="tab-content">
-      <h2 style="margin-bottom: 1.5rem; font-size: 18px;">Trade Deck</h2>
-
-      <!-- Browse by series -->
-      <div style="margin-bottom: 0.75rem;">
-        <label style="display: block; font-size: 11px; color: var(--text-dim); margin-bottom: 0.5rem; text-transform: uppercase;">Browse by keyword (e.g. Bitcoin, Trump, NBA)</label>
-        <div class="ticker-row">
-          <input type="text" id="series-input" placeholder="e.g. Bitcoin" onkeydown="if(event.key==='Enter')browseMarkets()" />
-          <button style="padding: 0.75rem 1.5rem; background: var(--card); border: 1px solid var(--border); color: var(--green); cursor: pointer; border-radius: var(--radius-sm);" onclick="browseMarkets()">BROWSE</button>
-        </div>
-        <div id="market-list" style="display:none; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-sm); margin-top: 0.5rem; max-height: 200px; overflow-y: auto;"></div>
-      </div>
-
-      <!-- Direct ticker input -->
-      <div style="margin-bottom: 1rem;">
-        <label style="display: block; font-size: 11px; color: var(--text-dim); margin-bottom: 0.5rem; text-transform: uppercase;">Or enter ticker directly</label>
-        <div class="ticker-row">
-          <input type="text" id="ticker-input" placeholder="Paste condition ID (0x...)" onkeydown="if(event.key==='Enter')fetchTickerData()" />
-          <button style="padding: 0.75rem 1.5rem; background: var(--card); border: 1px solid var(--border); color: var(--green); cursor: pointer; border-radius: var(--radius-sm);" onclick="fetchTickerData()">FETCH</button>
-        </div>
-        <div id="ticker-status" style="font-size: 12px; color: var(--text-dim); margin-top: 0.5rem; min-height: 18px;"></div>
-      </div>
-
-      <!-- Live preview -->
-      <div id="live-preview" style="display:none; background: rgba(16,185,129,0.06); border: 1px solid rgba(16,185,129,0.2); border-radius: var(--radius-sm); padding: 0.75rem 1rem; margin-bottom: 1.5rem;">
-        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 1rem;">
-          <div><div style="font-size: 10px; color: var(--green); opacity: 0.7; text-transform: uppercase; margin-bottom: 3px;">Last price</div><div style="font-size: 14px; font-weight: 600; color: var(--green);" id="lp-price">—</div></div>
-          <div><div style="font-size: 10px; color: var(--green); opacity: 0.7; text-transform: uppercase; margin-bottom: 3px;">Yes ask</div><div style="font-size: 14px; font-weight: 600; color: var(--green);" id="lp-ask">—</div></div>
-          <div><div style="font-size: 10px; color: var(--green); opacity: 0.7; text-transform: uppercase; margin-bottom: 3px;">Yes bid</div><div style="font-size: 14px; font-weight: 600; color: var(--green);" id="lp-bid">—</div></div>
-          <div><div style="font-size: 10px; color: var(--green); opacity: 0.7; text-transform: uppercase; margin-bottom: 3px;">Strike</div><div style="font-size: 14px; font-weight: 600; color: var(--green);" id="lp-strike">—</div></div>
-        </div>
-      </div>
-
-      <div class="prob-row">
-        <div class="prob-box">
-          <div class="prob-label">Prior %</div>
-          <div class="prob-val" id="prior-val">50%</div>
-        </div>
-        <div class="prob-box">
-          <div class="prob-label">Posterior %</div>
-          <div class="prob-val" id="posterior-val">50%</div>
-        </div>
-        <div class="prob-box">
-          <div class="prob-label">Model %</div>
-          <div class="prob-val" id="model-val">50%</div>
-        </div>
-      </div>
-
-      <button class="accordion-btn" onclick="toggleAccordion()">
-        <span>Evidence (16 factors)</span>
-        <span id="acc-arrow">▶</span>
-      </button>
-      <div id="accordion" class="accordion-content">
-        <div class="evidence-grid">
-          <div class="evidence-section">
-            <div class="evidence-title">Price / Momentum</div>
-            <div class="evidence-item" onclick="toggleEvidence('m1')"><div class="ev-btn neut" id="m1">–</div><span class="ev-label">Price toward strike</span></div>
-            <div class="evidence-item" onclick="toggleEvidence('m2')"><div class="ev-btn neut" id="m2">–</div><span class="ev-label">Price away from strike</span></div>
-            <div class="evidence-item" onclick="toggleEvidence('m3')"><div class="ev-btn neut" id="m3">–</div><span class="ev-label">Within 1% of strike</span></div>
-            <div class="evidence-item" onclick="toggleEvidence('m4')"><div class="ev-btn neut" id="m4">–</div><span class="ev-label">Strong volume</span></div>
-          </div>
-          <div class="evidence-section">
-            <div class="evidence-title">Macro / Catalyst</div>
-            <div class="evidence-item" onclick="toggleEvidence('mac1')"><div class="ev-btn neut" id="mac1">–</div><span class="ev-label">Bullish catalyst</span></div>
-            <div class="evidence-item" onclick="toggleEvidence('mac2')"><div class="ev-btn neut" id="mac2">–</div><span class="ev-label">Bearish catalyst</span></div>
-            <div class="evidence-item" onclick="toggleEvidence('mac3')"><div class="ev-btn neut" id="mac3">–</div><span class="ev-label">Supply shock</span></div>
-            <div class="evidence-item" onclick="toggleEvidence('mac4')"><div class="ev-btn neut" id="mac4">–</div><span class="ev-label">Policy dampening</span></div>
-          </div>
-          <div class="evidence-section">
-            <div class="evidence-title">Market Structure</div>
-            <div class="evidence-item" onclick="toggleEvidence('s1')"><div class="ev-btn neut" id="s1">–</div><span class="ev-label">Psychological level</span></div>
-            <div class="evidence-item" onclick="toggleEvidence('s2')"><div class="ev-btn neut" id="s2">–</div><span class="ev-label">Broke above strike</span></div>
-            <div class="evidence-item" onclick="toggleEvidence('s3')"><div class="ev-btn neut" id="s3">–</div><span class="ev-label">Rejected at strike</span></div>
-            <div class="evidence-item" onclick="toggleEvidence('s4')"><div class="ev-btn neut" id="s4">–</div><span class="ev-label">Support below price</span></div>
-          </div>
-          <div class="evidence-section">
-            <div class="evidence-title">Sentiment / Timing</div>
-            <div class="evidence-item" onclick="toggleEvidence('sen1')"><div class="ev-btn neut" id="sen1">–</div><span class="ev-label">Extreme fear</span></div>
-            <div class="evidence-item" onclick="toggleEvidence('sen2')"><div class="ev-btn neut" id="sen2">–</div><span class="ev-label">Greed/neutral</span></div>
-            <div class="evidence-item" onclick="toggleEvidence('sen3')"><div class="ev-btn neut" id="sen3">–</div><span class="ev-label">Res >24h</span></div>
-            <div class="evidence-item" onclick="toggleEvidence('sen4')"><div class="ev-btn neut" id="sen4">–</div><span class="ev-label">Res <6h</span></div>
-          </div>
-        </div>
-      </div>
-
-      <div class="size-row">
-        <div>
-          <label style="display: block; font-size: 11px; color: var(--text-dim); margin-bottom: 0.5rem; text-transform: uppercase;">Bankroll ($)</label>
-          <input type="number" id="bankroll" placeholder="optional" />
-        </div>
-        <div>
-          <label style="display: block; font-size: 11px; color: var(--text-dim); margin-bottom: 0.5rem; text-transform: uppercase;">Kelly Fraction</label>
-          <select id="kelly-frac">
-            <option value="0.25">0.25x — conservative</option>
-            <option value="0.5">0.5x — moderate</option>
-            <option value="1.0">1.0x — full Kelly</option>
-          </select>
-        </div>
-      </div>
-
-      <div class="context-area">
-        <label style="display: block; font-size: 11px; color: var(--text-dim); margin-bottom: 0.5rem; text-transform: uppercase;">Context (optional)</label>
-        <textarea id="context" placeholder="Describe what you see (price, news, sentiment, etc.)"></textarea>
-      </div>
-
-      <div class="loading-bar" id="loading-bar"><div class="loading-fill"></div></div>
-      <button class="btn-analyze" id="btn-analyze" onclick="runAnalysis()">RUN ANALYSIS</button>
-      <div id="error-msg"></div>
-
-      <div class="results" id="results">
-        <div style="margin-bottom: 1.5rem;">
-          <span class="sig-badge" id="sig-badge">SKIP</span>
-        </div>
-        <div class="metrics">
-          <div class="metric">
-            <div class="metric-label">EV</div>
-            <div class="metric-val" id="metric-ev">—</div>
-          </div>
-          <div class="metric">
-            <div class="metric-label">Kelly</div>
-            <div class="metric-val" id="metric-kelly">—</div>
-          </div>
-          <div class="metric">
-            <div class="metric-label">Position</div>
-            <div class="metric-val" id="metric-pos">—</div>
-          </div>
-        </div>
-        <div class="verdict" id="verdict"></div>
-        <div class="detail-text" id="trade-plan-text"></div>
-        <div class="detail-text" id="risks-text"></div>
-        <div class="detail-text" id="bottom-line-text"></div>
-      </div>
-    </div>
 
     <!-- TAB 2: HISTORY -->
     <div id="history" class="tab-content">
@@ -918,19 +724,8 @@
       </table>
     </div>
 
-    <!-- TAB 3: CHAT -->
-    <div id="chat" class="tab-content">
-      <div class="chat-container">
-        <div class="messages" id="messages"></div>
-        <div class="chat-input-row">
-          <input type="text" id="chat-input" placeholder="Ask me about markets, probabilities, sizing..." onkeydown="if(event.key==='Enter')sendMessage()" />
-          <button class="btn-send" onclick="sendMessage()">SEND</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- TAB 4: WEATHER -->
-    <div id="weather" class="tab-content">
+    <!-- WEATHER TAB -->
+    <div id="weather" class="tab-content active">
       <!-- Header -->
       <div style="margin-bottom: 20px;">
         <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 4px;">
@@ -1080,12 +875,8 @@ function switchTab(tab, evt) {
   const btn = evt ? evt.currentTarget : document.querySelector(`.tab-btn[onclick*="'${tab}'"]`);
   if (btn) btn.classList.add('active');
 
-  if (tab === 'scanner') runScan();
   if (tab === 'history') loadDBStatus();
   if (tab === 'weather') { wxLoadState(); wxFetchServerTrades(); wxRefreshAnalytics(); wxSyncAutoState(); wxFetchTradingStatus(); }
-  if (tab === 'chat' && document.getElementById('messages').children.length === 0) {
-    addMessage('bot', 'Hello! I\'m your Polymarket quant analyst. Ask me about markets, probabilities, or trade sizing.');
-  }
 }
 
 function toggleEvidence(id) {
@@ -1620,6 +1411,8 @@ window.addEventListener('load', () => {
   loadDBStatus();
   // Refresh DB status every 30 seconds
   setInterval(loadDBStatus, 30000);
+  // Initialize weather tab on load (it's the default tab now)
+  wxLoadState(); wxFetchServerTrades(); wxRefreshAnalytics(); wxSyncAutoState(); wxFetchTradingStatus();
 });
 
 // ─── Weather Paper Trader + Backtest ─────────────────────────────────────────
@@ -1707,7 +1500,30 @@ function wxSaveState() {
   try { localStorage.setItem('wxState', JSON.stringify(wxState)); } catch(e) {}
 }
 
-function wxLoadState() {
+async function wxLoadState() {
+  // Always fetch fresh state from server first — localStorage is just a fallback
+  try {
+    const r = await fetch(`${PROXY}/weather/state`, { headers: { 'x-proxy-api-key': PKEY } });
+    if (r.ok) {
+      const serverState = await r.json();
+      wxState.bankroll = serverState.bankroll ?? WX_STARTING_BANK;
+      wxState.wins = serverState.wins ?? 0;
+      wxState.losses = serverState.losses ?? 0;
+      wxState.totalTrades = serverState.totalTrades ?? 0;
+      wxState.pending = serverState.pending || [];
+      wxState.resolved = serverState.resolved || [];
+      // If server has been reset (0 trades), clear local trades too
+      if (serverState.totalTrades === 0) {
+        wxState.trades = [];
+        localStorage.removeItem('wxState');
+      }
+      wxSaveState();
+      wxRenderTrades();
+      wxRefreshAnalytics();
+      return;
+    }
+  } catch(e) {}
+  // Fallback to localStorage only if server is unreachable
   try {
     const saved = localStorage.getItem('wxState');
     if (saved) wxState = JSON.parse(saved);
@@ -2189,6 +2005,20 @@ async function wxFetchServerTrades() {
     const r = await fetch(`${PROXY}/weather/trades`, { headers: { 'x-proxy-api-key': PKEY } });
     if (!r.ok) return;
     const serverTrades = await r.json();
+    // If server returned empty (data was wiped), clear local state too
+    if (serverTrades.length === 0 && wxState.trades.length > 0) {
+      wxState.trades = [];
+      wxState.pending = [];
+      wxState.resolved = [];
+      wxState.wins = 0;
+      wxState.losses = 0;
+      wxState.totalTrades = 0;
+      wxState.bankroll = WX_STARTING_BANK;
+      wxSaveState();
+      wxRenderTrades();
+      wxRefreshAnalytics();
+      return;
+    }
     // Merge server-resolved trades into wxState
     for (const st of serverTrades) {
       if (st.resolved) {
