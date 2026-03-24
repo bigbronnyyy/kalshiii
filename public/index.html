@@ -972,8 +972,8 @@
         </div>
         <div>
           <label style="font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px;">Min EV Threshold</label>
-          <input type="range" id="wx-min-ev-slider" min="0" max="20" step="1" value="8" oninput="document.getElementById('wx-min-ev-val').textContent=this.value+'%'; WX_MIN_EDGE=this.value/100; wxRefreshAnalytics()" style="display: block; width: 100%; margin-top: 8px; accent-color: #22d3ee;">
-          <span id="wx-min-ev-val" style="font-size: 12px; color: #22d3ee;">8%</span>
+          <input type="range" id="wx-min-ev-slider" min="0" max="20" step="1" value="5" oninput="document.getElementById('wx-min-ev-val').textContent=this.value+'%'; WX_MIN_EDGE=this.value/100; wxRefreshAnalytics()" style="display: block; width: 100%; margin-top: 8px; accent-color: #22d3ee;">
+          <span id="wx-min-ev-val" style="font-size: 12px; color: #22d3ee;">5%</span>
         </div>
         <div>
           <label style="font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px;">Kelly Fraction</label>
@@ -1630,7 +1630,7 @@ const WX_CITIES = {
   KXHIGHMIA: { name: "Miami (MIA)",             lat: 25.7959, lon: -80.287,  stationKey: 'KMIA' },
   KXHIGHAUS: { name: "Austin (Bergstrom)",      lat: 30.1944, lon: -97.67,   stationKey: 'KAUS' },
 };
-let WX_MIN_EDGE = 0.08;
+let WX_MIN_EDGE = 0.05;
 let WX_KELLY_FRAC = 0.15;
 const WX_MAX_POS_PCT = 0.05;
 const WX_MAX_TRADE = 100;
@@ -1776,11 +1776,19 @@ function wxParseMarket(market) {
     else if (tMatch) { bracketLow = parseFloat(tMatch[1]); bracketHigh = 200; type = 'above'; }
   }
 
+  // Kalshi API v2 returns dollar-denominated string fields (e.g. "0.56")
   let marketPrice = null;
-  if (market.yes_bid > 0 && market.yes_bid < 99) marketPrice = market.yes_bid / 100;
-  else if (market.last_price > 0 && market.last_price < 99) marketPrice = market.last_price / 100;
+  const ybd = parseFloat(market.yes_bid_dollars);
+  const lpd = parseFloat(market.last_price_dollars);
+  const yad = parseFloat(market.yes_ask_dollars);
+  if (ybd > 0 && ybd < 1) marketPrice = ybd;
+  else if (lpd > 0 && lpd < 1) marketPrice = lpd;
+  else if (yad > 0 && yad < 1) marketPrice = yad;
+  // Legacy integer cent fields
+  else if (market.yes_bid > 0 && market.yes_bid < 100) marketPrice = market.yes_bid / 100;
+  else if (market.last_price > 0 && market.last_price < 100) marketPrice = market.last_price / 100;
 
-  return { ticker, subtitle, type, bracketLow, bracketHigh, marketPrice, volume: market.volume };
+  return { ticker, subtitle, type, bracketLow, bracketHigh, marketPrice, volume: parseFloat(market.volume_fp || market.volume || 0) };
 }
 
 function wxEnsembleProb(maxTemps, bracketLow, bracketHigh, type) {
@@ -1861,7 +1869,10 @@ async function wxRunScan() {
 
         for (const market of markets) {
           const parsed = wxParseMarket(market);
-          if (parsed.bracketLow == null || !parsed.marketPrice) continue;
+          if (parsed.bracketLow == null || !parsed.marketPrice) {
+            if (!parsed.marketPrice) wxLog(`${city.name}: SKIP ${parsed.ticker} — no market price`, 'wx-log-error');
+            continue;
+          }
 
           const prob = wxEnsembleProb(tomorrow.maxTemps, parsed.bracketLow, parsed.bracketHigh, parsed.type);
           const edge = prob - parsed.marketPrice;
