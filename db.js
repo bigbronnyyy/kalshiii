@@ -2,7 +2,7 @@ import Database from "better-sqlite3";
 import path from "path";
 import fs from "fs";
 
-const DB_PATH = process.env.DB_PATH || "./data/kalshi.db";
+const DB_PATH = process.env.DB_PATH || "/app/data/kalshi.db";
 
 let _db = null;
 
@@ -252,12 +252,12 @@ export function getMovers(db, hours = 1, minMove = 0.05) {
       m.title,
       f.first_p,
       l.last_p,
-      ABS(l.last_p - f.first_p) AS price_move
+      (l.last_p - f.first_p) AS price_move
     FROM first_snaps f
     JOIN last_snaps  l ON f.ticker = l.ticker
     JOIN markets     m ON f.ticker = m.ticker
     WHERE ABS(l.last_p - f.first_p) >= ?
-    ORDER BY price_move DESC
+    ORDER BY ABS(l.last_p - f.first_p) DESC
     LIMIT 20
   `).all(cutoff, minMove);
 }

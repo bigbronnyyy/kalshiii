@@ -38,7 +38,10 @@ async function scan() {
 
       for (const market of markets) {
         const parsed = parseWeatherMarket(market);
-        if (parsed.bracketLow == null || !parsed.marketPrice) continue;
+        if (parsed.bracketLow == null || !parsed.marketPrice) {
+          if (!parsed.marketPrice) console.log(`     [SKIP] ${parsed.ticker} | no market price (bracketLow=${parsed.bracketLow})`);
+          continue;
+        }
 
         const prob = computeEnsembleProb(tomorrow.maxTemps, parsed.bracketLow, parsed.bracketHigh, parsed.type);
         const edge = findEdge(prob, parsed.marketPrice);

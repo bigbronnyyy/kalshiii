@@ -47,11 +47,20 @@ function parseWeatherMarket(market) {
   }
 
   // Extract best available price
+  // Kalshi API v2 returns dollar-denominated string fields (e.g. "0.56")
+  // Fallback chain: yes_bid_dollars → last_price_dollars → yes_ask_dollars → legacy fields
   let marketPrice = null;
-  if (market.yes_bid > 0 && market.yes_bid < 99) marketPrice = market.yes_bid / 100;
-  else if (market.last_price > 0 && market.last_price < 99) marketPrice = market.last_price / 100;
+  const ybd = parseFloat(market.yes_bid_dollars);
+  const lpd = parseFloat(market.last_price_dollars);
+  const yad = parseFloat(market.yes_ask_dollars);
+  if (ybd > 0 && ybd < 1) marketPrice = ybd;
+  else if (lpd > 0 && lpd < 1) marketPrice = lpd;
+  else if (yad > 0 && yad < 1) marketPrice = yad;
+  // Legacy integer cent fields (deprecated but handle just in case)
+  else if (market.yes_bid > 0 && market.yes_bid < 100) marketPrice = market.yes_bid / 100;
+  else if (market.last_price > 0 && market.last_price < 100) marketPrice = market.last_price / 100;
 
-  return { ticker, subtitle, type, bracketLow, bracketHigh, marketPrice, volume: market.volume, eventTicker: market.event_ticker };
+  return { ticker, subtitle, type, bracketLow, bracketHigh, marketPrice, volume: parseFloat(market.volume_fp || market.volume || 0), eventTicker: market.event_ticker };
 }
 
 module.exports = { fetchOpenMarkets, parseWeatherMarket };
