@@ -1,37 +1,93 @@
 const fs = require("fs");
 const config = require("../config");
+const { listResolvedMarkets } = require("../storage/markets");
 
+// ── Load calibration data (sigma per city/source) ──
+function loadCalibration() {
+  try {
+    if (fs.existsSync(config.calibrationDataFile)) {
+      return JSON.parse(fs.readFileSync(config.calibrationDataFile, "utf8"));
+    }
+  } catch (e) {}
+  return {};
+}
+
+// ── Save calibration data ──
+function saveCalibration(cal) {
+  fs.writeFileSync(config.calibrationDataFile, JSON.stringify(cal, null, 2));
+}
+
+// ── Run calibration: compute MAE (sigma) per city/source ──
+// Once enough resolved markets exist (calibration_min), the sigma is used
+// instead of raw ensemble std for probability estimation.
+function runCalibration() {
+  const resolved = listResolvedMarkets();
+  if (resolved.length === 0) return loadCalibration();
+
+  const cal = loadCalibration();
+  const errors = {}; // { "citySlug_source": [error1, error2, ...] }
+
+  for (const mkt of resolved) {
+    if (mkt.actual_temp == null) continue;
+
+    for (const snap of (mkt.forecast_snapshots || [])) {
+      // Only use the last snapshot before resolution for calibration
+      for (const source of ["hrrr", "ecmwf"]) {
+        if (snap[source] != null) {
+          const key = `${mkt.city}_${source}`;
+          if (!errors[key]) errors[key] = [];
+          errors[key].push(Math.abs(snap[source] - mkt.actual_temp));
+        }
+      }
+    }
+  }
+
+  const now = new Date().toISOString();
+  for (const [key, errs] of Object.entries(errors)) {
+    if (errs.length >= config.calibrationMin) {
+      const mae = errs.reduce((a, b) => a + b, 0) / errs.length;
+      cal[key] = {
+        sigma: +mae.toFixed(2),
+        count: errs.length,
+        updated: now,
+      };
+    }
+  }
+
+  saveCalibration(cal);
+  return cal;
+}
+
+// ── Get calibrated sigma for a city/source (falls back to null) ──
+function getCalibratedSigma(citySlug, source) {
+  const cal = loadCalibration();
+  const entry = cal[`${citySlug}_${source}`];
+  return entry?.sigma ?? null;
+}
+
+// ── Generate calibration report ──
 function generateReport() {
-  if (!fs.existsSync(config.calibrationFile)) {
-    console.log("No calibration data yet.");
+  const cal = loadCalibration();
+  const resolved = listResolvedMarkets();
+
+  console.log(`\nCalibration Report`);
+  console.log(`Resolved markets: ${resolved.length}\n`);
+
+  if (Object.keys(cal).length === 0) {
+    console.log("No calibration data yet. Need at least " + config.calibrationMin + " resolved trades per city/source.");
     return;
   }
-  const data = fs.readFileSync(config.calibrationFile, "utf8")
-    .trim().split("\n").filter(Boolean).map(line => JSON.parse(line));
 
-  console.log(`\nCalibration Report (${data.length} observations)\n`);
-
-  // Edge distribution
-  const edges = data.map(d => d.edge);
-  const posEdges = edges.filter(e => e > 0);
-  const negEdges = edges.filter(e => e < 0);
-  const tradeable = edges.filter(e => Math.abs(e) >= config.minEdge);
-
-  console.log(`Positive edges: ${posEdges.length} (avg: ${posEdges.length ? (posEdges.reduce((a, b) => a + b, 0) / posEdges.length * 100).toFixed(1) : 0}%)`);
-  console.log(`Negative edges: ${negEdges.length}`);
-  console.log(`Tradeable (>${config.minEdge * 100}% edge): ${tradeable.length}`);
-
-  // By city
-  console.log(`\nBy City:`);
-  const byCity = {};
-  for (const d of data) {
-    if (!byCity[d.city]) byCity[d.city] = { count: 0, totalEdge: 0 };
-    byCity[d.city].count++;
-    byCity[d.city].totalEdge += Math.abs(d.edge);
+  for (const [key, data] of Object.entries(cal)) {
+    console.log(`  ${key}: sigma=${data.sigma}°F (${data.count} samples, updated ${data.updated})`);
   }
-  for (const [city, stats] of Object.entries(byCity)) {
-    console.log(`  ${city}: ${stats.count} obs, avg |edge|: ${(stats.totalEdge / stats.count * 100).toFixed(1)}%`);
+
+  // Also show legacy calibration log if it exists
+  if (fs.existsSync(config.calibrationFile)) {
+    const lines = fs.readFileSync(config.calibrationFile, "utf8")
+      .trim().split("\n").filter(Boolean);
+    console.log(`\nCalibration log entries: ${lines.length}`);
   }
 }
 
-module.exports = { generateReport };
+module.exports = { loadCalibration, runCalibration, getCalibratedSigma, generateReport };

@@ -1,3 +1,4 @@
 data/*.json
 data/*.jsonl
+data/markets/*.json
 node_modules/

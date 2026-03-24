@@ -35,4 +35,22 @@ function appendCalibration(entry) {
   fs.appendFileSync(config.calibrationFile, JSON.stringify(entry) + "\n");
 }
 
-module.exports = { loadState, saveState, appendTrade, appendCalibration };
+// ── Reset all data to fresh state ──
+function resetAllData() {
+  const files = [config.tradeLogFile, config.calibrationFile, config.calibrationDataFile];
+  for (const f of files) {
+    try { if (fs.existsSync(f)) fs.unlinkSync(f); } catch (e) {}
+  }
+  // Clear markets directory
+  if (fs.existsSync(config.marketsDir)) {
+    for (const f of fs.readdirSync(config.marketsDir)) {
+      if (f.endsWith(".json")) {
+        try { fs.unlinkSync(path.join(config.marketsDir, f)); } catch (e) {}
+      }
+    }
+  }
+  // Reset state
+  saveState({ bankroll: config.startingBankroll, totalTrades: 0, wins: 0, losses: 0, pending: [], resolved: [] });
+}
+
+module.exports = { loadState, saveState, appendTrade, appendCalibration, resetAllData };
