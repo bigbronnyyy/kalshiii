@@ -747,6 +747,7 @@
       <div class="wx-controls">
         <button class="wx-btn" id="wx-scan-btn" onclick="wxRunScan()">SCAN NOW</button>
         <button class="wx-btn" id="wx-auto-btn" onclick="wxToggleAuto()">AUTO OFF</button>
+        <button class="wx-btn" style="background:rgba(239,68,68,0.12);border-color:rgba(239,68,68,0.3);color:#ef4444;" onclick="wxResetData()">RESET DATA</button>
         <span style="font-size: 12px; color: var(--text-dim);" id="wx-scan-status">Ready</span>
       </div>
 
@@ -1788,6 +1789,27 @@ async function wxRunScan() {
   btn.textContent = 'SCAN NOW';
   document.getElementById('wx-scan-status').textContent = 'Last scan: ' + new Date().toLocaleTimeString();
   wxScanRunning = false;
+}
+
+async function wxResetData() {
+  if (!confirm('Reset ALL trade data to zero? This cannot be undone.')) return;
+  try {
+    const r = await fetch(`${PROXY}/weather/reset`, { method: 'POST', headers: { 'x-proxy-api-key': PKEY } });
+    const result = await r.json();
+    if (result.success) {
+      // Clear local state and localStorage
+      wxState = { bankroll: WX_STARTING_BANK, totalTrades: 0, wins: 0, losses: 0, pending: [], resolved: [], trades: [] };
+      localStorage.removeItem('wxState');
+      wxRenderTrades();
+      wxRefreshAnalytics();
+      wxLog('All trade data reset to zero.');
+      document.getElementById('wx-scan-status').textContent = 'Data reset — ready for fresh start';
+    } else {
+      alert('Reset failed: ' + (result.error || 'unknown error'));
+    }
+  } catch (e) {
+    alert('Reset failed: ' + e.message);
+  }
 }
 
 async function wxToggleAuto() {

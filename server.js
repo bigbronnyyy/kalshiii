@@ -401,6 +401,16 @@ app.get("/weather/trades", requireProxyApiKey, (req, res) => {
   }
 });
 
+app.post("/weather/reset", requireProxyApiKey, (req, res) => {
+  try {
+    const { resetAllData } = require("./weather-bot/storage/logger.js");
+    resetAllData();
+    res.json({ success: true, message: "All trade data reset to fresh state." });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
 app.get("/weather/markets", requireProxyApiKey, (req, res) => {
   try {
     const marketsDir = path.join(__dirname, "weather-bot/data/markets");
