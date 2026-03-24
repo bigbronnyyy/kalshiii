@@ -59,6 +59,7 @@ async function scan() {
             if (isDupe) continue;
             const trade = { timestamp: ts, city: city.name, ticker: parsed.ticker, bracket: parsed.subtitle, side, ensembleProb: +prob.toFixed(3), marketPrice: +parsed.marketPrice.toFixed(3), edge: +Math.abs(edge).toFixed(3), contracts, cost, forecastDate: tomorrow.date, status: "PAPER", resolved: false };
 
+            console.log(`     [TRADE ENTRY] mode=PAPER | ${side} ${parsed.subtitle} | edge=${(Math.abs(edge)*100).toFixed(1)}% | Would need REAL_TRADING_ENABLED=true + KALSHI_API_KEY + KALSHI_SECRET to go live`);
             appendTrade(trade);
             state.pending.push(trade);
             state.totalTrades++;

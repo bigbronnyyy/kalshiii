@@ -955,6 +955,9 @@
         <span style="font-size: 12px; color: var(--text-dim);" id="wx-scan-status">Ready</span>
       </div>
 
+      <!-- Trading Status Banner -->
+      <div id="wx-trading-banner" style="display: none; padding: 10px 14px; margin-bottom: 16px; border-radius: var(--radius); font-size: 12px; border: 1px solid;"></div>
+
       <!-- Parameter Controls -->
       <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 24px; padding: 16px; background: var(--card); border-radius: var(--radius); border: 1px solid var(--border);">
         <div>
@@ -1077,7 +1080,7 @@ function switchTab(tab) {
 
   if (tab === 'scanner') runScan();
   if (tab === 'history') loadDBStatus();
-  if (tab === 'weather') { wxLoadState(); wxFetchServerTrades(); wxRefreshAnalytics(); wxSyncAutoState(); }
+  if (tab === 'weather') { wxLoadState(); wxFetchServerTrades(); wxRefreshAnalytics(); wxSyncAutoState(); wxFetchTradingStatus(); }
   if (tab === 'chat' && document.getElementById('messages').children.length === 0) {
     addMessage('bot', 'Hello! I\'m your Polymarket quant analyst. Ask me about markets, probabilities, or trade sizing.');
   }
@@ -1492,6 +1495,8 @@ function renderResults(p, modelP, bankroll, kf) {
 }
 
 // History
+let dbPollTimer = null;
+
 async function loadDBStatus() {
   try {
     const r = await fetch(`${PROXY}/db/status`);
@@ -1507,7 +1512,28 @@ async function loadDBStatus() {
     const tbody = document.getElementById('movers-body');
     tbody.innerHTML = (movers.movers || []).slice(0, 10).map(m =>
       `<tr><td>${m.ticker}</td><td>${m.title || ''}</td><td>${(m.price_move * 100).toFixed(1)}%</td><td>${m.price_move > 0 ? '↑' : '↓'}</td></tr>`
-    ).join('') || '<tr><td colspan="4">No movers</td></tr>';
+    ).join('') || '<tr><td colspan="4">No movers yet</td></tr>';
+
+    // If no data yet, poll every 3s until data appears (up to 60s)
+    if ((!d.markets || d.markets === 0) && !dbPollTimer) {
+      let attempts = 0;
+      dbPollTimer = setInterval(async () => {
+        attempts++;
+        if (attempts >= 20) { clearInterval(dbPollTimer); dbPollTimer = null; return; }
+        try {
+          const r2 = await fetch(`${PROXY}/db/status`);
+          const d2 = await r2.json();
+          if (d2.markets > 0) {
+            clearInterval(dbPollTimer);
+            dbPollTimer = null;
+            loadDBStatus(); // Reload everything with fresh data
+          }
+        } catch(e2) {}
+      }, 3000);
+    } else if (d.markets > 0 && dbPollTimer) {
+      clearInterval(dbPollTimer);
+      dbPollTimer = null;
+    }
   } catch(e) {
     console.error('DB load error:', e);
   }
@@ -1960,6 +1986,29 @@ async function wxSyncAutoState() {
     // Start polling if auto is on
     if (data.auto && !wxAutoInterval) {
       wxAutoInterval = setInterval(wxRefreshFromServer, 30000);
+    }
+  } catch(e) { /* server not available */ }
+}
+
+async function wxFetchTradingStatus() {
+  const banner = document.getElementById('wx-trading-banner');
+  if (!banner) return;
+  try {
+    const res = await fetch(`${PROXY}/weather/trading-status`, { headers: { 'x-proxy-api-key': PKEY } });
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data.ready) {
+      banner.style.display = 'block';
+      banner.style.borderColor = 'var(--green)';
+      banner.style.background = 'rgba(34,211,238,0.05)';
+      banner.style.color = 'var(--green)';
+      banner.textContent = 'LIVE TRADING READY — All credentials configured';
+    } else {
+      banner.style.display = 'block';
+      banner.style.borderColor = '#f59e0b';
+      banner.style.background = 'rgba(245,158,11,0.08)';
+      banner.style.color = '#f59e0b';
+      banner.innerHTML = '<strong>PAPER MODE</strong> — Real trading blocked: ' + data.blockers.map(b => '<br>&bull; ' + b).join('');
     }
   } catch(e) { /* server not available */ }
 }
