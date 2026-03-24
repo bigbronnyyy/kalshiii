@@ -1500,7 +1500,30 @@ function wxSaveState() {
   try { localStorage.setItem('wxState', JSON.stringify(wxState)); } catch(e) {}
 }
 
-function wxLoadState() {
+async function wxLoadState() {
+  // Always fetch fresh state from server first — localStorage is just a fallback
+  try {
+    const r = await fetch(`${PROXY}/weather/state`, { headers: { 'x-proxy-api-key': PKEY } });
+    if (r.ok) {
+      const serverState = await r.json();
+      wxState.bankroll = serverState.bankroll ?? WX_STARTING_BANK;
+      wxState.wins = serverState.wins ?? 0;
+      wxState.losses = serverState.losses ?? 0;
+      wxState.totalTrades = serverState.totalTrades ?? 0;
+      wxState.pending = serverState.pending || [];
+      wxState.resolved = serverState.resolved || [];
+      // If server has been reset (0 trades), clear local trades too
+      if (serverState.totalTrades === 0) {
+        wxState.trades = [];
+        localStorage.removeItem('wxState');
+      }
+      wxSaveState();
+      wxRenderTrades();
+      wxRefreshAnalytics();
+      return;
+    }
+  } catch(e) {}
+  // Fallback to localStorage only if server is unreachable
   try {
     const saved = localStorage.getItem('wxState');
     if (saved) wxState = JSON.parse(saved);
@@ -1982,6 +2005,20 @@ async function wxFetchServerTrades() {
     const r = await fetch(`${PROXY}/weather/trades`, { headers: { 'x-proxy-api-key': PKEY } });
     if (!r.ok) return;
     const serverTrades = await r.json();
+    // If server returned empty (data was wiped), clear local state too
+    if (serverTrades.length === 0 && wxState.trades.length > 0) {
+      wxState.trades = [];
+      wxState.pending = [];
+      wxState.resolved = [];
+      wxState.wins = 0;
+      wxState.losses = 0;
+      wxState.totalTrades = 0;
+      wxState.bankroll = WX_STARTING_BANK;
+      wxSaveState();
+      wxRenderTrades();
+      wxRefreshAnalytics();
+      return;
+    }
     // Merge server-resolved trades into wxState
     for (const st of serverTrades) {
       if (st.resolved) {
