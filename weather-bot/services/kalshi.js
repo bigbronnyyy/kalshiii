@@ -105,7 +105,9 @@ function parseWeatherMarket(market) {
     const tMatch = ticker.match(/T(\d+\.?\d*)/);
     if (bMatch) {
       bracketLow = parseFloat(bMatch[1]);
-      bracketHigh = bracketLow + 1;
+      // Try to extract width from subtitle (e.g., "76° to 78°" → width of 2)
+      const subRange = subtitle.match(/(\d+)[°\u00b0]?\s*to\s*(\d+)/i);
+      bracketHigh = subRange ? parseInt(subRange[2]) : bracketLow + 2;
       type = "bracket";
     } else if (tMatch) {
       const threshold = parseFloat(tMatch[1]);

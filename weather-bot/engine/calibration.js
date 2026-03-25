@@ -17,37 +17,46 @@ function saveCalibration(cal) {
   fs.writeFileSync(config.calibrationDataFile, JSON.stringify(cal, null, 2));
 }
 
-// ── Run calibration: compute MAE (sigma) per city/source ──
+// ── Run calibration: compute actual standard deviation of forecast residuals per city/source ──
 // Once enough resolved markets exist (calibration_min), the sigma is used
 // instead of raw ensemble std for probability estimation.
+// NOTE: We use actual std of residuals, NOT MAE. MAE ≠ σ.
+// For reference: σ ≈ MAE × √(π/2) ≈ MAE × 1.2533 for normal distributions.
 function runCalibration() {
   const resolved = listResolvedMarkets();
   if (resolved.length === 0) return loadCalibration();
 
   const cal = loadCalibration();
-  const errors = {}; // { "citySlug_source": [error1, error2, ...] }
+  const residuals = {}; // { "citySlug_source": [error1, error2, ...] }
 
   for (const mkt of resolved) {
     if (mkt.actual_temp == null) continue;
 
-    for (const snap of (mkt.forecast_snapshots || [])) {
-      // Only use the last snapshot before resolution for calibration
-      for (const source of ["hrrr", "ecmwf"]) {
-        if (snap[source] != null) {
-          const key = `${mkt.city}_${source}`;
-          if (!errors[key]) errors[key] = [];
-          errors[key].push(Math.abs(snap[source] - mkt.actual_temp));
-        }
+    // Use the LAST snapshot before resolution (most recent forecast)
+    const snaps = mkt.forecast_snapshots || [];
+    const lastSnap = snaps.length > 0 ? snaps[snaps.length - 1] : null;
+    if (!lastSnap) continue;
+
+    for (const source of ["hrrr", "ecmwf"]) {
+      if (lastSnap[source] != null) {
+        const key = `${mkt.city}_${source}`;
+        if (!residuals[key]) residuals[key] = [];
+        residuals[key].push(lastSnap[source] - mkt.actual_temp); // signed residual
       }
     }
   }
 
   const now = new Date().toISOString();
-  for (const [key, errs] of Object.entries(errors)) {
+  for (const [key, errs] of Object.entries(residuals)) {
     if (errs.length >= config.calibrationMin) {
-      const mae = errs.reduce((a, b) => a + b, 0) / errs.length;
+      // Compute actual standard deviation (not MAE)
+      const mean = errs.reduce((a, b) => a + b, 0) / errs.length;
+      const variance = errs.reduce((a, b) => a + (b - mean) ** 2, 0) / (errs.length - 1);
+      const std = Math.sqrt(variance);
+      const bias = mean; // systematic bias (positive = forecast runs hot)
       cal[key] = {
-        sigma: +mae.toFixed(2),
+        sigma: +std.toFixed(2),
+        bias: +bias.toFixed(2),
         count: errs.length,
         updated: now,
       };

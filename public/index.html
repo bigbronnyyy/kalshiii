@@ -768,8 +768,8 @@
         </div>
         <div>
           <label style="font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px;">Min EV Threshold</label>
-          <input type="range" id="wx-min-ev-slider" min="0" max="20" step="1" value="8" oninput="document.getElementById('wx-min-ev-val').textContent=this.value+'%'; WX_MIN_EDGE=this.value/100; wxRefreshAnalytics()" style="display: block; width: 100%; margin-top: 8px; accent-color: #22d3ee;">
-          <span id="wx-min-ev-val" style="font-size: 12px; color: #22d3ee;">8%</span>
+          <input type="range" id="wx-min-ev-slider" min="5" max="25" step="1" value="10" oninput="document.getElementById('wx-min-ev-val').textContent=this.value+'%'; WX_MIN_EDGE=this.value/100; wxRefreshAnalytics()" style="display: block; width: 100%; margin-top: 8px; accent-color: #22d3ee;">
+          <span id="wx-min-ev-val" style="font-size: 12px; color: #22d3ee;">10%</span>
         </div>
         <div>
           <label style="font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px;">Kelly Fraction</label>
@@ -1424,10 +1424,15 @@ const WX_CITIES = {
   KXHIGHMIA: { name: "Miami (MIA)",             lat: 25.7959, lon: -80.287,  stationKey: 'KMIA' },
   KXHIGHAUS: { name: "Austin (Bergstrom)",      lat: 30.1944, lon: -97.67,   stationKey: 'KAUS' },
 };
-let WX_MIN_EDGE = 0.08;
+let WX_MIN_EDGE = 0.10;
 let WX_KELLY_FRAC = 0.15;
-const WX_MAX_POS_PCT = 0.05;
-const WX_MAX_TRADE = 100;
+const WX_MAX_POS_PCT = 0.03;
+const WX_MAX_TRADE = 25;
+const WX_MIN_PROB = 0.15;       // Don't trade if ensemble prob < 15% (too few members)
+const WX_MIN_MEMBERS = 5;       // Need at least 5/31 members agreeing for a signal
+const WX_MIN_VOLUME = 500;      // Skip markets with < $500 volume
+const WX_MAX_SPREAD = 0.06;     // Skip markets with > 6% bid-ask spread
+const WX_MAX_PRICE = 0.55;      // Don't buy YES above 55c
 let WX_STARTING_BANK = 1000;
 
 let wxState = { bankroll: WX_STARTING_BANK, totalTrades: 0, wins: 0, losses: 0, pending: [], resolved: [], trades: [] };
@@ -1476,12 +1481,12 @@ function wxRenderTrades() {
       <td>${wxEsc(t.city || '')}</td>
       <td>${wxEsc(t.bracket || t.ticker || '')}</td>
       <td><span style="color:${t.side==='YES'?'var(--green)':'var(--red)'};font-weight:600;">${wxEsc(t.side||'')}</span></td>
-      <td style="color:#818cf8;">${(t.ensembleProb*100).toFixed(0)}%</td>
-      <td>${(t.marketPrice*100).toFixed(0)}c</td>
-      <td style="color:${t.edge>0?'#34d399':'#f87171'};">${(t.edge*100).toFixed(1)}%</td>
+      <td style="color:#818cf8;">${(t.ensembleProb*100).toFixed(0)}%${t.memberCount ? ' ('+t.memberCount+')' : ''}</td>
+      <td>${((t.entryPrice || t.marketPrice)*100).toFixed(0)}c</td>
+      <td style="color:${t.ev > 0 || t.edge>0?'#34d399':'#f87171'};">${t.ev ? (t.ev*100).toFixed(1) : (t.edge*100).toFixed(1)}%</td>
       <td>${t.contracts}</td>
       <td>${pnlCell}</td>
-      <td style="color:var(--text-dim);">$${typeof (t.bankroll||wxState.bankroll)?.toFixed === 'function' ? (t.bankroll||wxState.bankroll).toFixed(0) : ''}</td>
+      <td style="color:var(--text-dim);">$${typeof t.bankroll === 'number' ? t.bankroll.toFixed(0) : (typeof wxState.bankroll?.toFixed === 'function' ? wxState.bankroll.toFixed(0) : '')}</td>
       <td>${resultDot}</td>
     </tr>`;
   }).join('');
@@ -1610,7 +1615,7 @@ function wxParseMarket(market) {
   if (bracketLow === null) {
     const bMatch = ticker.match(/B(\d+\.?\d*)/);
     const tMatch = ticker.match(/T(\d+\.?\d*)/);
-    if (bMatch) { bracketLow = parseFloat(bMatch[1]); bracketHigh = bracketLow + 1; type = 'bracket'; }
+    if (bMatch) { bracketLow = parseFloat(bMatch[1]); const sr = subtitle.match(/(\d+)[°\u00b0]?\s*to\s*(\d+)/i); bracketHigh = sr ? parseInt(sr[2]) : bracketLow + 2; type = 'bracket'; }
     else if (tMatch) {
       const threshold = parseFloat(tMatch[1]);
       const subLower = subtitle.toLowerCase();
@@ -1648,12 +1653,12 @@ function wxParseMarket(market) {
 
 function wxEnsembleProb(maxTemps, bracketLow, bracketHigh, type) {
   const total = maxTemps.length;
-  if (total === 0) return 0;
+  if (total === 0) return { prob: 0, count: 0, total: 0 };
   let count;
   if (type === 'above') count = maxTemps.filter(t => t >= bracketLow).length;
   else if (type === 'below') count = maxTemps.filter(t => t <= bracketHigh).length;
   else count = maxTemps.filter(t => t >= bracketLow && t <= bracketHigh).length;
-  return count / total;
+  return { prob: count / total, count, total };
 }
 
 function wxKellySize(prob, marketPrice, bankroll, kellyFrac) {
@@ -1697,9 +1702,16 @@ async function wxRunScan() {
 
       const tomorrow = dailyMax.length > 1 ? dailyMax[1] : dailyMax[0];
       const mean = tomorrow.maxTemps.reduce((a, b) => a + b, 0) / tomorrow.maxTemps.length;
-      const std = Math.sqrt(tomorrow.maxTemps.reduce((a, b) => a + (b - mean) ** 2, 0) / tomorrow.maxTemps.length);
+      // Sample std (N-1), not population std (N)
+      const std = tomorrow.maxTemps.length > 1
+        ? Math.sqrt(tomorrow.maxTemps.reduce((a, b) => a + (b - mean) ** 2, 0) / (tomorrow.maxTemps.length - 1))
+        : 0;
       const min = Math.min(...tomorrow.maxTemps);
       const max = Math.max(...tomorrow.maxTemps);
+
+      if (tomorrow.memberCount < 20) {
+        wxLog(`${city.name}: WARNING — only ${tomorrow.memberCount} ensemble members (expected ~31)`, 'wx-log-error');
+      }
 
       cardHtml += `<div class="wx-city-meta">${wxEsc(tomorrow.date)} | ${tomorrow.memberCount} members</div>`;
       cardHtml += `<div class="wx-forecast-bar">`;
@@ -1708,6 +1720,15 @@ async function wxRunScan() {
       cardHtml += `</div>`;
 
       wxLog(`${city.name}: Mean ${mean.toFixed(1)}F, Std ${std.toFixed(1)}F (${tomorrow.memberCount} members)`);
+
+      // Skip city if ensemble spread is too tight — no real distributional info
+      if (std < 1.0) {
+        wxLog(`${city.name}: SKIP — ensemble std ${std.toFixed(1)}°F too tight, members not spreading`, 'wx-log-error');
+        cardHtml += `<div style="font-size: 12px; color: var(--red); margin-top: 0.5rem;">Ensemble spread too tight (${std.toFixed(1)}°F) — skipping trades</div>`;
+        cardHtml += `</div>`;
+        citiesEl.innerHTML += cardHtml;
+        continue;
+      }
 
       // Fetch markets
       let markets = [];
@@ -1724,43 +1745,73 @@ async function wxRunScan() {
 
         for (const market of markets) {
           const parsed = wxParseMarket(market);
-          if (parsed.bracketLow == null || isNaN(parsed.bracketLow) || !parsed.marketPrice) {
-            if (!parsed.marketPrice) wxLog(`${city.name}: SKIP ${parsed.ticker} — no market price`, 'wx-log-error');
-            continue;
-          }
+          if (parsed.bracketLow == null || isNaN(parsed.bracketLow) || !parsed.marketPrice) continue;
 
-          const prob = wxEnsembleProb(tomorrow.maxTemps, parsed.bracketLow, parsed.bracketHigh, parsed.type);
+          // ── Hard filters: volume, spread, price ──
+          const vol = parseFloat(market.volume_fp || market.volume || 0);
+          if (vol < WX_MIN_VOLUME) continue;
+          const askP = parseFloat(market.yes_ask_dollars);
+          const bidP = parseFloat(market.yes_bid_dollars);
+          const spread = (askP > 0 && bidP > 0) ? askP - bidP : null;
+          if (spread != null && spread > WX_MAX_SPREAD) continue;
+
+          const { prob, count: memberCount } = wxEnsembleProb(tomorrow.maxTemps, parsed.bracketLow, parsed.bracketHigh, parsed.type);
           const edge = prob - parsed.marketPrice;
 
-          if (Math.abs(edge) >= WX_MIN_EDGE) {
-            totalEdges++;
-            const side = edge > 0 ? 'YES' : 'NO';
-            const tradeProb = edge > 0 ? prob : 1 - prob;
-            const tradePrice = edge > 0 ? parsed.marketPrice : 1 - parsed.marketPrice;
-            const posSize = wxKellySize(tradeProb, tradePrice, wxState.bankroll);
-
+          // ── Display all edges (even ones we won't trade) ──
+          const label = parsed.subtitle || `${parsed.bracketLow}-${parsed.bracketHigh}`;
+          if (Math.abs(edge) >= 0.05) {
             const edgeColor = edge > 0 ? 'var(--green)' : 'var(--red)';
-            const label = parsed.subtitle || `${parsed.bracketLow}-${parsed.bracketHigh}`;
             cardHtml += `<div class="wx-edge-row">
               <span class="wx-edge-bracket">${wxEsc(label)}</span>
-              <span style="color: ${edge > 0 ? 'var(--green)' : 'var(--red)'}; font-weight: 600;">${wxEsc(side)}</span>
-              <span>GEFS: ${(prob*100).toFixed(0)}%</span>
+              <span style="color: ${edge > 0 ? 'var(--green)' : 'var(--red)'}; font-weight: 600;">${edge > 0 ? 'YES' : 'NO'}</span>
+              <span>GEFS: ${(prob*100).toFixed(0)}% (${memberCount}/${tomorrow.maxTemps.length})</span>
               <span>Mkt: ${(parsed.marketPrice*100).toFixed(0)}c</span>
               <span class="wx-edge-val" style="color: ${edgeColor};">${(Math.abs(edge)*100).toFixed(1)}%</span>
             </div>`;
+          }
 
-            if (posSize > 0.5) {
-              const contracts = Math.floor(posSize / tradePrice);
-              const cost = +(contracts * tradePrice).toFixed(2);
-              const dupeKey = `${city.name}|${parsed.ticker}|${tomorrow.date}|${side}`;
-              const isDupe = wxState.pending.some(t => `${t.city}|${t.ticker}|${t.forecastDate}|${t.side}` === dupeKey);
-              if (contracts > 0 && !isDupe) {
-                const trade = { timestamp: ts, city: city.name, ticker: parsed.ticker, bracket: parsed.subtitle || label, side, ensembleProb: +prob.toFixed(3), marketPrice: +parsed.marketPrice.toFixed(3), edge: +Math.abs(edge).toFixed(3), contracts, cost, forecastDate: tomorrow.date, status: 'PAPER', resolved: false };
-                wxState.trades.push(trade);
-                wxState.pending.push(trade);
-                wxState.totalTrades++;
-                wxLog(`TRADE: ${side} ${label} [${parsed.type}] @ ${(parsed.marketPrice*100).toFixed(0)}c | GEFS: ${(prob*100).toFixed(0)}% | Edge: ${(Math.abs(edge)*100).toFixed(1)}% | ${contracts}x ($${cost})`, 'wx-log-trade');
-              }
+          // ── Trade entry filters ──
+          if (Math.abs(edge) < WX_MIN_EDGE) continue;
+
+          const side = edge > 0 ? 'YES' : 'NO';
+          const tradeProb = edge > 0 ? prob : 1 - prob;
+          const tradePrice = edge > 0 ? (askP > 0 && askP < 1 ? askP : parsed.marketPrice) : 1 - parsed.marketPrice;
+
+          // Minimum probability: reject lottery tickets with too few members
+          if (tradeProb < WX_MIN_PROB) {
+            wxLog(`${city.name}: SKIP ${label} ${side} — prob ${(tradeProb*100).toFixed(0)}% < ${(WX_MIN_PROB*100).toFixed(0)}% min`, 'wx-log-error');
+            continue;
+          }
+          // Minimum member agreement
+          const agreeing = side === 'YES' ? memberCount : (tomorrow.maxTemps.length - memberCount);
+          if (agreeing < WX_MIN_MEMBERS) {
+            wxLog(`${city.name}: SKIP ${label} ${side} — only ${agreeing}/${tomorrow.maxTemps.length} members agree`, 'wx-log-error');
+            continue;
+          }
+          // Max price filter (don't overpay)
+          if (tradePrice > WX_MAX_PRICE) continue;
+
+          // Proper EV check
+          const ev = tradeProb * (1 / tradePrice - 1) - (1 - tradeProb);
+          if (ev < WX_MIN_EDGE) continue;
+
+          totalEdges++;
+          const posSize = wxKellySize(tradeProb, tradePrice, wxState.bankroll);
+
+          if (posSize > 0.5) {
+            const contracts = Math.floor(posSize / tradePrice);
+            const cost = +(contracts * tradePrice).toFixed(2);
+            if (cost > wxState.bankroll) continue; // Can't afford it
+            const dupeKey = `${city.name}|${parsed.ticker}|${tomorrow.date}|${side}`;
+            const isDupe = wxState.pending.some(t => `${t.city}|${t.ticker}|${t.forecastDate}|${t.side}` === dupeKey);
+            if (contracts > 0 && !isDupe) {
+              wxState.bankroll -= cost; // Deduct capital on entry
+              const trade = { timestamp: ts, city: city.name, ticker: parsed.ticker, bracket: parsed.subtitle || label, side, ensembleProb: +prob.toFixed(3), marketPrice: +parsed.marketPrice.toFixed(3), entryPrice: +tradePrice.toFixed(3), edge: +Math.abs(edge).toFixed(3), ev: +ev.toFixed(4), contracts, cost, bankroll: +wxState.bankroll.toFixed(2), forecastDate: tomorrow.date, memberCount: agreeing, status: 'PAPER', resolved: false };
+              wxState.trades.push(trade);
+              wxState.pending.push(trade);
+              wxState.totalTrades++;
+              wxLog(`TRADE: ${side} ${label} [${parsed.type}] @ ${(tradePrice*100).toFixed(0)}c | GEFS: ${(prob*100).toFixed(0)}% (${agreeing} members) | EV: ${(ev*100).toFixed(1)}% | ${contracts}x ($${cost})`, 'wx-log-trade');
             }
           }
         }
@@ -2050,8 +2101,8 @@ async function wxFetchServerTrades() {
           // Move from pending to resolved
           wxState.pending = wxState.pending.filter(p => p !== local);
           wxState.resolved.push(local);
-          if (st.won) wxState.wins++; else wxState.losses++;
-          wxState.bankroll += st.pnl;
+          if (st.won) { wxState.wins++; wxState.bankroll += local.cost + st.pnl; } // Return cost + profit on win
+          else { wxState.losses++; } // Cost already deducted at entry, pnl is -cost for display
         }
       }
     }

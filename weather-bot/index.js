@@ -118,6 +118,12 @@ async function scan() {
 
         if (!dayData || dayData.mean == null) continue;
 
+        // Skip if ensemble spread is too tight (members aren't giving real distributional info)
+        if (dayData.std != null && dayData.std < 1.0) {
+          console.log(`     [SKIP] ${forecastDate}: ensemble std=${dayData.std}°F too tight — no real spread`);
+          continue;
+        }
+
         const horizon = getHorizon(forecastDate);
 
         // ── Get point forecasts ──
@@ -135,11 +141,15 @@ async function scan() {
         // Use best point forecast as mean, or ensemble mean as fallback
         const forecastMean = best.temp ?? dayData.mean;
 
-        // ── Compute probability via normal CDF ──
-        const prob = computeProbability(forecastMean, sigma, parsed.bracketLow, parsed.bracketHigh, parsed.type);
-
-        // Also compute raw ensemble prob for logging
+        // ── Primary signal: raw ensemble member counting (honest, no distribution assumption) ──
         const rawProb = computeEnsembleProb(dayData.maxTemps, parsed.bracketLow, parsed.bracketHigh, parsed.type);
+        const memberCount = Math.round(rawProb * dayData.memberCount);
+
+        // Secondary: CDF-based probability (for confirmation only)
+        const cdfProb = computeProbability(forecastMean, sigma, parsed.bracketLow, parsed.bracketHigh, parsed.type);
+
+        // Use ensemble prob as primary, CDF as confirmation
+        const prob = rawProb;
         const rawEdge = findEdge(rawProb, parsed.marketPrice);
 
         // Use ask price for entry (honest simulation)
@@ -193,22 +203,51 @@ async function scan() {
         saveMarket(mkt);
 
         // ── ENTRY FILTERS ──
-        // Only trade YES side on underpriced buckets with positive EV
-        if (prob <= parsed.marketPrice) continue; // no edge
-        if (ev < config.minEV) continue;          // EV too low
+        // Determine trade side: YES if our prob > market, NO if market overprices
+        const edge = rawProb - parsed.marketPrice;
+        const side = edge > 0 ? "YES" : "NO";
+        const tradeProb = side === "YES" ? prob : 1 - prob;
+        const tradePrice = side === "YES" ? entryPrice : (1 - (parsed.bidPrice || parsed.marketPrice));
+        const tradeEV = calcEV(tradeProb, tradePrice);
+
+        // Minimum probability: reject lottery tickets
+        if (tradeProb < 0.15) continue;
+
+        // Minimum ensemble member agreement (need at least 5/31)
+        const agreeing = side === "YES" ? memberCount : (dayData.memberCount - memberCount);
+        if (agreeing < 5) continue;
+
+        // Require BOTH ensemble and CDF to agree on direction
+        const cdfEdge = side === "YES" ? (cdfProb - parsed.marketPrice) : (parsed.marketPrice - cdfProb);
+        if (cdfEdge <= 0) continue; // CDF disagrees — don't trade
+
+        // EV must clear threshold
+        if (tradeEV < config.minEV) continue;
+
+        // Edge must be meaningful
+        if (Math.abs(edge) < config.minEV) continue;
+
+        // Max entry price
+        if (tradePrice > config.maxPrice) continue;
 
         // ── Position sizing via Kelly ──
-        const posSize = sizePosition(prob, entryPrice, state.bankroll);
+        const posSize = sizePosition(tradeProb, tradePrice, state.bankroll);
         if (posSize < 0.50) continue; // too small
 
-        const contracts = Math.floor(posSize / entryPrice);
+        const contracts = Math.floor(posSize / tradePrice);
         if (contracts < 1) continue;
-        const cost = +(contracts * entryPrice).toFixed(2);
+        const cost = +(contracts * tradePrice).toFixed(2);
 
-        // ── Duplicate check ──
-        const dupeKey = `${cityConfig.name}|${parsed.ticker}|${forecastDate}`;
-        const isDupe = state.pending.some(t => `${t.city}|${t.ticker}|${t.forecastDate}` === dupeKey);
+        // Can't afford it
+        if (cost > state.bankroll) continue;
+
+        // ── Duplicate check (includes side) ──
+        const dupeKey = `${cityConfig.name}|${parsed.ticker}|${forecastDate}|${side}`;
+        const isDupe = state.pending.some(t => `${t.city}|${t.ticker}|${t.forecastDate}|${t.side}` === dupeKey);
         if (isDupe) continue;
+
+        // ── Deduct bankroll on entry ──
+        state.bankroll -= cost;
 
         // ── Enter paper trade ──
         const trade = {
@@ -217,25 +256,28 @@ async function scan() {
           citySlug: seriesTicker,
           ticker: parsed.ticker,
           bracket: parsed.subtitle,
-          side: "YES",
-          prob: +prob.toFixed(3),
+          side,
+          prob: +tradeProb.toFixed(3),
           ensembleProb: +rawProb.toFixed(3),
+          cdfProb: +cdfProb.toFixed(3),
           marketPrice: +parsed.marketPrice.toFixed(3),
-          entryPrice: +entryPrice.toFixed(3),
-          ev: +ev.toFixed(4),
-          edge: +Math.abs(rawEdge).toFixed(3),
+          entryPrice: +tradePrice.toFixed(3),
+          ev: +tradeEV.toFixed(4),
+          edge: +Math.abs(edge).toFixed(3),
           contracts,
           cost,
+          bankroll: +state.bankroll.toFixed(2),
           forecastDate,
           forecastMean: +forecastMean.toFixed(1),
           sigma: +sigma.toFixed(2),
           source: best.source,
+          memberCount: agreeing,
           status: "PAPER",
           resolved: false,
-          peakPrice: entryPrice,
+          peakPrice: tradePrice,
         };
 
-        console.log(`     [TRADE] YES ${parsed.subtitle} [${parsed.type}] @ ${(entryPrice * 100).toFixed(0)}c | Prob=${(prob * 100).toFixed(1)}% | EV=${(ev * 100).toFixed(1)}% | ${contracts}x ($${cost}) | src=${best.source}`);
+        console.log(`     [TRADE] ${side} ${parsed.subtitle} [${parsed.type}] @ ${(tradePrice * 100).toFixed(0)}c | Prob=${(tradeProb * 100).toFixed(1)}% (${agreeing} members) | EV=${(tradeEV * 100).toFixed(1)}% | ${contracts}x ($${cost}) | src=${best.source}`);
         appendTrade(trade);
         state.pending.push(trade);
         state.totalTrades++;
@@ -284,13 +326,15 @@ async function monitor() {
 
       // ── Stop loss: price dropped 20% from entry ──
       if (currentPrice <= trade.entryPrice * 0.80) {
-        const pnl = +(trade.contracts * (currentPrice - trade.entryPrice)).toFixed(2);
+        // Recover partial value: sell at current bid price
+        const recovered = +(trade.contracts * currentPrice).toFixed(2);
+        const pnl = +(recovered - trade.cost).toFixed(2); // net loss
         console.log(`  [STOP-LOSS] ${trade.city} ${trade.bracket} | Entry: ${(trade.entryPrice * 100).toFixed(0)}c → ${(currentPrice * 100).toFixed(0)}c | P&L: $${pnl}`);
         trade.pnl = pnl;
         trade.resolved = true;
         trade.won = false;
         trade.closeReason = "stop_loss";
-        state.bankroll += pnl;
+        state.bankroll += recovered; // Return whatever we can recover (cost was already deducted)
         state.losses++;
         state.resolved.push(trade);
         changed = true;
@@ -299,12 +343,15 @@ async function monitor() {
 
       // ── Trailing stop: price rose 20%+ then fell back to entry ──
       if (trade.peakPrice >= trade.entryPrice * 1.20 && currentPrice <= trade.entryPrice) {
-        const pnl = 0;
-        console.log(`  [TRAIL-STOP] ${trade.city} ${trade.bracket} | Peak: ${(trade.peakPrice * 100).toFixed(0)}c → ${(currentPrice * 100).toFixed(0)}c | Breakeven`);
+        // Exit at ~breakeven: recover cost
+        const recovered = +(trade.contracts * currentPrice).toFixed(2);
+        const pnl = +(recovered - trade.cost).toFixed(2);
+        console.log(`  [TRAIL-STOP] ${trade.city} ${trade.bracket} | Peak: ${(trade.peakPrice * 100).toFixed(0)}c → ${(currentPrice * 100).toFixed(0)}c | P&L: $${pnl}`);
         trade.pnl = pnl;
         trade.resolved = true;
         trade.won = false;
         trade.closeReason = "trailing_stop";
+        state.bankroll += recovered; // Return recovered amount (cost already deducted)
         state.resolved.push(trade);
         changed = true;
         continue;
@@ -334,37 +381,28 @@ async function resolveClosedTrades(state) {
     if (!cityKey) { stillPending.push(trade); continue; }
     const city = config.cities[cityKey];
 
-    // Try NWS first for actual temp
+    // Only resolve via NWS actual temperature — never use Kalshi market price (circular logic)
     let actual = await getActualHigh(city.lat, city.lon, trade.forecastDate);
 
-    // Fallback: check Kalshi market resolution
-    let kalshiResult = null;
     if (actual === null) {
-      kalshiResult = await checkKalshiResolution(trade.ticker);
-    }
-
-    if (actual === null && kalshiResult === null) {
-      // Can't resolve yet — keep pending (NWS may not have data yet)
+      // NWS data not available yet — keep waiting (can take 24-48h)
       stillPending.push(trade);
       continue;
     }
 
     // Determine win/loss
-    let won;
-    if (actual !== null) {
-      const parsed = parseWeatherMarket({ ticker: trade.ticker, subtitle: trade.bracket });
-      let inBracket;
-      if (parsed.type === "above") inBracket = actual >= parsed.bracketLow;
-      else if (parsed.type === "below") inBracket = actual <= parsed.bracketHigh;
-      else inBracket = actual >= parsed.bracketLow && actual <= parsed.bracketHigh;
-      won = trade.side === "YES" ? inBracket : !inBracket;
-    } else {
-      won = kalshiResult === "WIN";
-    }
+    const parsed = parseWeatherMarket({ ticker: trade.ticker, subtitle: trade.bracket });
+    let inBracket;
+    if (parsed.type === "above") inBracket = actual >= parsed.bracketLow;
+    else if (parsed.type === "below") inBracket = actual <= parsed.bracketHigh;
+    else inBracket = actual >= parsed.bracketLow && actual <= parsed.bracketHigh;
+    const won = trade.side === "YES" ? inBracket : !inBracket;
 
-    const payout = trade.contracts * (1 - trade.entryPrice);
-    const pnl = won ? +payout.toFixed(2) : -trade.cost;
-    state.bankroll += pnl;
+    // P&L: profit on win, -cost on loss (for display/logging)
+    const profit = +(trade.contracts * (1 - trade.entryPrice)).toFixed(2);
+    const pnl = won ? profit : -trade.cost;
+    // Since we deducted cost at entry: win returns cost+profit, loss returns nothing
+    state.bankroll += won ? (trade.cost + profit) : 0;
     if (won) state.wins++; else state.losses++;
     trade.actualTemp = actual;
     trade.won = won;
