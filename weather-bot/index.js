@@ -104,8 +104,8 @@ async function scan() {
         // ── Filter: volume ──
         if (parsed.volume < config.minVolume) continue;
 
-        // ── Filter: spread/slippage ──
-        if (parsed.spread != null && parsed.spread > config.maxSlippage) continue;
+        // ── Filter: spread/slippage (null spread = no 2-sided book, skip) ──
+        if (parsed.spread == null || parsed.spread > config.maxSlippage) continue;
 
         // ── Filter: time horizon ──
         const hrsLeft = hoursUntilClose(parsed.closeTime);
@@ -119,8 +119,8 @@ async function scan() {
         if (!dayData || dayData.mean == null) continue;
 
         // Skip if ensemble spread is too tight (members aren't giving real distributional info)
-        if (dayData.std != null && dayData.std < 1.0) {
-          console.log(`     [SKIP] ${forecastDate}: ensemble std=${dayData.std}°F too tight — no real spread`);
+        if (dayData.std != null && dayData.std < 0.5) {
+          console.log(`     [SKIP] ${forecastDate}: ensemble std=${dayData.std.toFixed(2)}°F too tight — no real spread`);
           continue;
         }
 
@@ -227,6 +227,9 @@ async function scan() {
         // Edge must be meaningful
         if (Math.abs(edge) < config.minEV) continue;
 
+        // Min entry price: reject phantom markets with no real liquidity
+        if (tradePrice < 0.03) continue;
+
         // Max entry price
         if (tradePrice > config.maxPrice) continue;
 
@@ -277,7 +280,7 @@ async function scan() {
           peakPrice: tradePrice,
         };
 
-        console.log(`     [TRADE] ${side} ${parsed.subtitle} [${parsed.type}] @ ${(tradePrice * 100).toFixed(0)}c | Prob=${(tradeProb * 100).toFixed(1)}% (${agreeing} members) | EV=${(tradeEV * 100).toFixed(1)}% | ${contracts}x ($${cost}) | src=${best.source}`);
+        console.log(`     [TRADE] ${side} ${parsed.subtitle} [${parsed.type}] @ ${(tradePrice * 100).toFixed(0)}c | ${side}Prob=${(tradeProb * 100).toFixed(1)}% (${agreeing}/${dayData.memberCount} members) | EV=${(tradeEV * 100).toFixed(1)}% | ${contracts}x ($${cost}) | src=${best.source}`);
         appendTrade(trade);
         state.pending.push(trade);
         state.totalTrades++;

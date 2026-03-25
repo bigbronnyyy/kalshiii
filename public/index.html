@@ -1433,6 +1433,8 @@ const WX_MIN_MEMBERS = 5;       // Need at least 5/31 members agreeing for a sig
 const WX_MIN_VOLUME = 500;      // Skip markets with < $500 volume
 const WX_MAX_SPREAD = 0.06;     // Skip markets with > 6% bid-ask spread
 const WX_MAX_PRICE = 0.55;      // Don't buy YES above 55c
+const WX_MIN_PRICE = 0.03;      // Don't trade below 3c — no real liquidity
+const WX_STD_FLOOR = 0.5;       // Skip ensemble std below 0.5°F (members not spreading)
 let WX_STARTING_BANK = 1000;
 
 let wxState = { bankroll: WX_STARTING_BANK, totalTrades: 0, wins: 0, losses: 0, pending: [], resolved: [], trades: [] };
@@ -1722,8 +1724,8 @@ async function wxRunScan() {
       wxLog(`${city.name}: Mean ${mean.toFixed(1)}F, Std ${std.toFixed(1)}F (${tomorrow.memberCount} members)`);
 
       // Skip city if ensemble spread is too tight — no real distributional info
-      if (std < 1.0) {
-        wxLog(`${city.name}: SKIP — ensemble std ${std.toFixed(1)}°F too tight, members not spreading`, 'wx-log-error');
+      if (std < WX_STD_FLOOR) {
+        wxLog(`${city.name}: SKIP — ensemble std ${std.toFixed(2)}°F too tight, members not spreading`, 'wx-log-error');
         cardHtml += `<div style="font-size: 12px; color: var(--red); margin-top: 0.5rem;">Ensemble spread too tight (${std.toFixed(1)}°F) — skipping trades</div>`;
         cardHtml += `</div>`;
         citiesEl.innerHTML += cardHtml;
@@ -1753,7 +1755,7 @@ async function wxRunScan() {
           const askP = parseFloat(market.yes_ask_dollars);
           const bidP = parseFloat(market.yes_bid_dollars);
           const spread = (askP > 0 && bidP > 0) ? askP - bidP : null;
-          if (spread != null && spread > WX_MAX_SPREAD) continue;
+          if (spread == null || spread > WX_MAX_SPREAD) continue; // null spread = no 2-sided book, skip
 
           const { prob, count: memberCount } = wxEnsembleProb(tomorrow.maxTemps, parsed.bracketLow, parsed.bracketHigh, parsed.type);
           const edge = prob - parsed.marketPrice;
@@ -1777,6 +1779,12 @@ async function wxRunScan() {
           const side = edge > 0 ? 'YES' : 'NO';
           const tradeProb = edge > 0 ? prob : 1 - prob;
           const tradePrice = edge > 0 ? (askP > 0 && askP < 1 ? askP : parsed.marketPrice) : 1 - parsed.marketPrice;
+
+          // Minimum trade price: reject phantom 1-2c markets with no real liquidity
+          if (tradePrice < WX_MIN_PRICE) {
+            wxLog(`${city.name}: SKIP ${label} ${side} — price ${(tradePrice*100).toFixed(0)}c < ${(WX_MIN_PRICE*100).toFixed(0)}c floor (no liquidity)`, 'wx-log-error');
+            continue;
+          }
 
           // Minimum probability: reject lottery tickets with too few members
           if (tradeProb < WX_MIN_PROB) {
@@ -1811,7 +1819,7 @@ async function wxRunScan() {
               wxState.trades.push(trade);
               wxState.pending.push(trade);
               wxState.totalTrades++;
-              wxLog(`TRADE: ${side} ${label} [${parsed.type}] @ ${(tradePrice*100).toFixed(0)}c | GEFS: ${(prob*100).toFixed(0)}% (${agreeing} members) | EV: ${(ev*100).toFixed(1)}% | ${contracts}x ($${cost})`, 'wx-log-trade');
+              wxLog(`TRADE: ${side} ${label} [${parsed.type}] @ ${(tradePrice*100).toFixed(0)}c | GEFS: ${(tradeProb*100).toFixed(0)}% (${agreeing} members) | EV: ${(ev*100).toFixed(1)}% | ${contracts}x ($${cost})`, 'wx-log-trade');
             }
           }
         }
