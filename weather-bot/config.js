@@ -122,10 +122,10 @@ module.exports = {
 
   // Trading parameters (from config.json, with defaults)
   balance: userConfig.balance ?? 1000.0,
-  maxBet: userConfig.max_bet ?? 20.0,
-  minEV: userConfig.min_ev ?? 0.05,
-  maxPrice: userConfig.max_price ?? 0.45,
-  minVolume: userConfig.min_volume ?? 2000,
+  maxBet: userConfig.max_bet ?? 25.0,
+  minEV: userConfig.min_ev ?? 0.10,
+  maxPrice: userConfig.max_price ?? 0.55,
+  minVolume: userConfig.min_volume ?? 500,
   minHours: userConfig.min_hours ?? 2.0,
   maxHours: userConfig.max_hours ?? 72.0,
   kellyFraction: userConfig.kelly_fraction ?? 0.25,
