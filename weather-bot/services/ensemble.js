@@ -19,6 +19,9 @@ function extractDailyMaxFromEnsemble(data) {
   const times = data.hourly.time;
   const memberKeys = Object.keys(data.hourly).filter(k => k.startsWith("temperature_2m_member"));
   if (memberKeys.length === 0) return null;
+  if (memberKeys.length < 20) {
+    console.warn(`  [!] Ensemble: only ${memberKeys.length} members returned (expected ~31)`);
+  }
 
   const dailyMax = {};
 
@@ -38,13 +41,21 @@ function extractDailyMaxFromEnsemble(data) {
   return Object.entries(dailyMax).map(([date, memberMaxes]) => {
     const maxTemps = memberKeys.map(mk => memberMaxes[mk]).filter(t => t > -Infinity);
     const mean = maxTemps.length > 0 ? maxTemps.reduce((a, b) => a + b, 0) / maxTemps.length : null;
+    // Use sample std (N-1), not population std (N)
     const std = maxTemps.length > 1
-      ? Math.sqrt(maxTemps.reduce((a, b) => a + (b - mean) ** 2, 0) / maxTemps.length)
+      ? Math.sqrt(maxTemps.reduce((a, b) => a + (b - mean) ** 2, 0) / (maxTemps.length - 1))
       : null;
+    // Sanity check: ensemble spread too tight or too wide
+    if (std != null && std < 0.5) {
+      console.warn(`  [!] Ensemble ${date}: std=${std.toFixed(2)}°F is suspiciously tight — members may not be independent`);
+    }
+    if (std != null && std > 15) {
+      console.warn(`  [!] Ensemble ${date}: std=${std.toFixed(2)}°F is suspiciously wide — data quality issue?`);
+    }
     return {
       date,
       maxTemps,
-      memberCount: memberKeys.length,
+      memberCount: maxTemps.length,
       mean: mean != null ? +mean.toFixed(1) : null,
       std: std != null ? +std.toFixed(2) : null,
     };

@@ -118,6 +118,12 @@ async function scan() {
 
         if (!dayData || dayData.mean == null) continue;
 
+        // Skip if ensemble spread is too tight (members aren't giving real distributional info)
+        if (dayData.std != null && dayData.std < 1.0) {
+          console.log(`     [SKIP] ${forecastDate}: ensemble std=${dayData.std}°F too tight — no real spread`);
+          continue;
+        }
+
         const horizon = getHorizon(forecastDate);
 
         // ── Get point forecasts ──

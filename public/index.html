@@ -1615,7 +1615,7 @@ function wxParseMarket(market) {
   if (bracketLow === null) {
     const bMatch = ticker.match(/B(\d+\.?\d*)/);
     const tMatch = ticker.match(/T(\d+\.?\d*)/);
-    if (bMatch) { bracketLow = parseFloat(bMatch[1]); bracketHigh = bracketLow + 1; type = 'bracket'; }
+    if (bMatch) { bracketLow = parseFloat(bMatch[1]); const sr = subtitle.match(/(\d+)[°\u00b0]?\s*to\s*(\d+)/i); bracketHigh = sr ? parseInt(sr[2]) : bracketLow + 2; type = 'bracket'; }
     else if (tMatch) {
       const threshold = parseFloat(tMatch[1]);
       const subLower = subtitle.toLowerCase();
@@ -1702,9 +1702,16 @@ async function wxRunScan() {
 
       const tomorrow = dailyMax.length > 1 ? dailyMax[1] : dailyMax[0];
       const mean = tomorrow.maxTemps.reduce((a, b) => a + b, 0) / tomorrow.maxTemps.length;
-      const std = Math.sqrt(tomorrow.maxTemps.reduce((a, b) => a + (b - mean) ** 2, 0) / tomorrow.maxTemps.length);
+      // Sample std (N-1), not population std (N)
+      const std = tomorrow.maxTemps.length > 1
+        ? Math.sqrt(tomorrow.maxTemps.reduce((a, b) => a + (b - mean) ** 2, 0) / (tomorrow.maxTemps.length - 1))
+        : 0;
       const min = Math.min(...tomorrow.maxTemps);
       const max = Math.max(...tomorrow.maxTemps);
+
+      if (tomorrow.memberCount < 20) {
+        wxLog(`${city.name}: WARNING — only ${tomorrow.memberCount} ensemble members (expected ~31)`, 'wx-log-error');
+      }
 
       cardHtml += `<div class="wx-city-meta">${wxEsc(tomorrow.date)} | ${tomorrow.memberCount} members</div>`;
       cardHtml += `<div class="wx-forecast-bar">`;
@@ -1713,6 +1720,15 @@ async function wxRunScan() {
       cardHtml += `</div>`;
 
       wxLog(`${city.name}: Mean ${mean.toFixed(1)}F, Std ${std.toFixed(1)}F (${tomorrow.memberCount} members)`);
+
+      // Skip city if ensemble spread is too tight — no real distributional info
+      if (std < 1.0) {
+        wxLog(`${city.name}: SKIP — ensemble std ${std.toFixed(1)}°F too tight, members not spreading`, 'wx-log-error');
+        cardHtml += `<div style="font-size: 12px; color: var(--red); margin-top: 0.5rem;">Ensemble spread too tight (${std.toFixed(1)}°F) — skipping trades</div>`;
+        cardHtml += `</div>`;
+        citiesEl.innerHTML += cardHtml;
+        continue;
+      }
 
       // Fetch markets
       let markets = [];
